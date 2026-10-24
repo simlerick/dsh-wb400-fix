@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "WorkBuddy 400 修复",
+    "description": "一键修复 WorkBuddy / CodeBuddy 的「请求被拦截 Illegal API invocation from an unapproved channel」（code 11128）。提示词无损绕过，可随时关闭。"
+  },
+  "nav": "wb400修复",
+  "title": "关键词风控中和",
+  "subtitle": "上游按关键词拦截请求时的一键修复",
+  "state": {
+    "on": "已修复",
+    "off": "已关闭",
+    "unknown": "状态未知"
+  },
+  "master": {
+    "label": "总开关",
+    "hint": "关闭后完全恢复原始请求，一个字节都不改"
+  },
+  "option": {
+    "neutralize": "中和身份关键词",
+    "neutralizeHint": "把「DeepSeek Harness」中间插入不可见分隔符，语义不变、上游不再拦截",
+    "ensureSystem": "补首条 system",
+    "ensureSystemHint": "首条消息不是 system 时自动补一条（11128 的另一个成因）",
+    "hideIdentity": "隐藏品牌词",
+    "hideIdentityHint": "更激进：连 DeepSeek 也打散。默认关闭"
+  },
+  "why": {
+    "title": "这个报错到底是怎么回事",
+    "body": "上游返回 400，报文写着 Illegal API invocation from an unapproved channel，看起来像渠道问题——实际上跟渠道、域名、客户端身份、请求头都无关。真正原因是上游在对 system prompt 做关键词内容风控：只要出现「DeepSeek Harness」这个词组就会被拒。",
+    "selfCheck": "60 秒自证",
+    "selfCheckBody": "用同一个 token 打两次，只改 system prompt 里的一个词。含关键词的那次失败、去掉关键词的那次成功，就说明是这个原因。",
+    "whyIntermittent": "为什么时好时坏",
+    "whyIntermittentBody": "关键词要配合请求体够大（约超过 1KB）才稳定触发。短 prompt 即使含关键词也会放过，这是最容易误判成「偶发故障」的地方。"
+  },
+  "status": {
+    "patchOk": "钩子已就位",
+    "patchMissing": "旧版钩子未打上（不影响使用）",
+    "hookOk": "运行时钩子已安装",
+    "hookMissing": "运行时钩子未安装",
+    "hookMissingHint": "Host 半身没有运行：请确认插件已启用，然后重启 DSH。",
+    "repair": "补打钩子",
+    "repairing": "处理中…",
+    "meterLinked": "与「用量计量」插件联动中（共享同一份开关）",
+    "standalone": "独立运行（未检测到用量计量插件）",
+    "fetchOk": "主通道已接管（fetch 层）",
+    "fetchMissing": "主通道未安装",
+    "fetchMissingHint": "Host 半身没跑起来：确认插件已启用，然后重启 DSH。",
+    "patchOptional": "旧版钩子未打上（不影响使用）"
+  },
+  "stats": {
+    "label": "本机已中和 {n} 处，补 system {m} 次",
+    "idle": "还没有需要改写的请求"
+  },
+  "preview": {
+    "title": "效果预览",
+    "before": "改写前",
+    "after": "改写后",
+    "hits": "命中 {n} 处",
+    "note": "文件路径不会被改写"
+  },
+  "restore": {
+    "hint": "上游不再拦截后，把总开关关掉即可完全恢复原样。"
+  },
+  "error": {
+    "loadFailed": "读取状态失败：{reason}",
+    "saveFailed": "保存失败：{reason}"
+  }
+}

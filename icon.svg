@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="WorkBuddy 400 fix">
+  <defs>
+    <linearGradient id="wbfixBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#wbfixBg)"/>
+  <!-- 扳手：象征「修复」 -->
+  <g fill="none" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M39.5 22.5a8 8 0 0 1-9.9 9.9L19 43l-3.5-3.5 10.6-10.6a8 8 0 0 1 9.9-9.9l-4.2 4.2 3.5 3.5 4.2-4.2z"/>
+  </g>
+  <!-- 断开的斜线：象征「被拦截 / 已绕过」 -->
+  <g stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.9">
+    <line x1="41" y1="41" x2="45" y2="45"/>
+    <line x1="48" y1="41" x2="52" y2="45"/>
+  </g>
+</svg>

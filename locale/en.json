@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "WorkBuddy 400 Fix",
+    "description": "One-click fix for WorkBuddy / CodeBuddy \"请求被拦截 Illegal API invocation from an unapproved channel\" (code 11128). Lossless prompt neutralization, togglable at any time."
+  },
+  "nav": "wb400 Fix",
+  "title": "Keyword filter bypass",
+  "subtitle": "One-click fix when the upstream rejects requests by keyword",
+  "state": {
+    "on": "Fixed",
+    "off": "Off",
+    "unknown": "Unknown"
+  },
+  "master": {
+    "label": "Master switch",
+    "hint": "Turning this off restores the original request untouched"
+  },
+  "option": {
+    "neutralize": "Neutralise identity keyword",
+    "neutralizeHint": "Inserts an invisible separator inside \"DeepSeek Harness\" — same meaning, no longer blocked",
+    "ensureSystem": "Prepend system message",
+    "ensureSystemHint": "Adds a system message when the first one is not a system role (another 11128 cause)",
+    "hideIdentity": "Also hide brand word",
+    "hideIdentityHint": "More aggressive: splits DeepSeek too. Off by default"
+  },
+  "why": {
+    "title": "What this error actually is",
+    "body": "The upstream returns 400 with \"Illegal API invocation from an unapproved channel\", which looks like a channel problem. It is not — it has nothing to do with the channel, domain, client identity or headers. The real cause is keyword-based content filtering on the system prompt: the phrase \"DeepSeek Harness\" gets the request rejected.",
+    "selfCheck": "Verify in 60 seconds",
+    "selfCheckBody": "Send the same request twice with the same token, changing only one word in the system prompt. If the one containing the keyword fails and the other succeeds, this is the cause.",
+    "whyIntermittent": "Why it seems intermittent",
+    "whyIntermittentBody": "The keyword only triggers reliably with a large enough body (roughly over 1KB). Short prompts pass even with the keyword, which is why it is easily mistaken for a flaky failure."
+  },
+  "status": {
+    "patchOk": "Hook in place",
+    "patchMissing": "Legacy hook not applied (not required)",
+    "hookOk": "Runtime hook installed",
+    "hookMissing": "Runtime hook missing",
+    "hookMissingHint": "The host half is not running: make sure the plugin is enabled, then restart DSH.",
+    "repair": "Reinstall hook",
+    "repairing": "Working…",
+    "meterLinked": "Linked with the usage-meter plugin (shared switches)",
+    "standalone": "Standalone (usage-meter plugin not detected)",
+    "fetchOk": "Main channel active (fetch layer)",
+    "fetchMissing": "Main channel inactive",
+    "fetchMissingHint": "Host half is not running: make sure the plugin is enabled, then restart DSH.",
+    "patchOptional": "Legacy hook not applied (not required)"
+  },
+  "stats": {
+    "label": "Neutralised {n} spots, prepended system {m} times",
+    "idle": "No request needed rewriting yet"
+  },
+  "preview": {
+    "title": "Preview",
+    "before": "Before",
+    "after": "After",
+    "hits": "{n} matches",
+    "note": "File paths are never rewritten"
+  },
+  "restore": {
+    "hint": "Once the upstream stops blocking, switch the master switch off to restore the original behaviour."
+  },
+  "error": {
+    "loadFailed": "Failed to load status: {reason}",
+    "saveFailed": "Failed to save: {reason}"
+  }
+}

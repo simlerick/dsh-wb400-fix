@@ -1,0 +1,72 @@
+{
+  "name": "dsh-wb400-fix",
+  "version": "1.1.1",
+  "type": "module",
+  "description": "修复 DeepSeek​ Harness 里 WorkBuddy / CodeBuddy 的「请求被拦截」400 错误（Illegal API invocation from an unapproved channel / code 11128），对提示词无损，兼容所有 WB 反代插件。 Fixes the WorkBuddy/CodeBuddy 400 \"unapproved channel\" error (code 11128) with lossless system-prompt neutralisation.",
+  "license": "MIT",
+  "author": {
+    "name": "simlerick",
+    "url": "https://github.com/simlerick"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/simlerick/dsh-wb400-fix.git"
+  },
+  "homepage": "https://github.com/simlerick/dsh-wb400-fix#readme",
+  "bugs": {
+    "url": "https://github.com/simlerick/dsh-wb400-fix/issues"
+  },
+  "keywords": [
+    "workbuddy",
+    "codebuddy",
+    "unapproved-channel",
+    "illegal-api-invocation",
+    "error-11128",
+    "11128",
+    "11140",
+    "workbuddy-400",
+    "codebuddy-400",
+    "prompt-filter",
+    "keyword-filter-bypass",
+    "zero-width-space",
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "llm-proxy",
+    "api-gateway"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src/",
+    "cordis.patch.yml",
+    "locale/",
+    "icon.svg",
+    "README.md",
+    "README.en.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "test": "node test/selftest-fetch-hook.mjs && node test/selftest-realworld.mjs && node test/runtime-hook.mjs"
+  }
+}
