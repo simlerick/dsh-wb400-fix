@@ -1,142 +1,45 @@
 # dsh-wb400-fix
 
-**A DeepSeek​ Harness plugin that fixes the WorkBuddy / CodeBuddy "request blocked" 400 error.**
+**One line: stops the 400 error you get when using WorkBuddy / CodeBuddy models inside DeepSeek​ Harness.**
 
 [中文](README.md) · [English](README.en.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
-[![DSH](https://img.shields.io/badge/DeepSeek%E2%80%8B%20Harness-plugin-5B8DEF)](https://github.com/simlerick/dsh-wb400-fix)
 
 ---
 
-## What is this?
+## What is this
 
-If you use WorkBuddy or CodeBuddy models inside DeepSeek​ Harness, requests
-intermittently fail with:
+A **plugin for DeepSeek​ Harness** — not a standalone program; it installs into the
+harness and runs there.
+
+It does exactly one thing: fixes the error that keeps interrupting WorkBuddy /
+CodeBuddy models inside the harness —
 
 ```
 Illegal API invocation from an unapproved channel
 HTTP 400 · code 11128
 ```
 
-**This plugin makes that stop happening.** It changes nothing about what your
-request means — install it, flip one switch, done.
+Install it, flip one switch, the error stops. **Your requests are not changed in
+meaning** — the plugin only stops the upstream from misreading them.
 
 ---
 
-## Why the error happens
+## Do I need it?
 
-The message blames "an unapproved channel." That diagnosis is wrong, and chasing it
-wastes a lot of time on accounts, endpoints, headers and rate limits that are all
-perfectly fine.
+You need it if any of these apply:
 
-The real cause is **keyword content filtering on the system prompt**: any request
-whose system prompt contains the phrase `DeepSeek​ Harness` gets rejected.
+- You use WorkBuddy or CodeBuddy models in the harness and get **"request blocked"
+  interruptions**
+- You connected Tencent's free quota through a proxy plugin like `dsh-our-free-model`,
+  and long messages get rejected
+- You have seen `code 11128` or `code 11140`
 
-DeepSeek​ Harness injects that phrase into every request automatically. So for anyone
-using these models through the harness, this is not an intermittent glitch — it is a
-deterministic failure.
+You don't need it if:
 
-### How it was isolated
-
-Two requests, same token, identical except for one word:
-
-| system prompt | result |
-|---|---|
-| `You are an AI agent powered by DeepSeek​ Harness.` | ❌ 400 / 11128 |
-| `You are an AI agent.` | ✅ 200 |
-
-Swapping accounts, changing the endpoint, impersonating another client, adding thirteen
-missing headers, tuning `reasoning_effort` and `max_tokens`, shrinking the tool list
-from 316 to a handful, changing network, reducing concurrency — all ruled out by
-experiment. None of them was the cause.
-
-> 💡 Why it *looks* intermittent: the filter needs a request body of roughly 1 KB or
-> more to engage reliably. Short prompts slip through even when they contain the
-> phrase, which is exactly what makes this easy to misdiagnose as flakiness.
-
----
-
-## How the fix works
-
-Insert a zero-width space (`U+200B`) between the two words:
-
-```js
-// before
-"You are an AI agent powered by DeepSeek​ Harness."
-// after — visually identical; \u200B renders as nothing
-"You are an AI agent powered by DeepSeek\u200B Harness."
-```
-
-Why this works:
-
-- The upstream check is **substring matching** — one extra character breaks the match.
-- The model's reading of the text is **semantically unchanged**.
-- The intervention is **lossless**: nothing is deleted, reworded, or dropped from context.
-
-Measured on the real request shape (316 tools, `effort=max`, `max_tokens=128000`):
-
-```
-original prompt  → 0 / 5 succeeded
-neutralised      → 5 / 5 succeeded
-```
-
-### One detail that matters: don't touch file paths
-
-Local paths also contain the phrase:
-
-```
-D:\10_COD\DeepSeek Harness\resources\app.asar\dsh\
-```
-
-Inserting an invisible character there would make the model hand a corrupted path to
-tool calls, which then fail — a subtler bug than the one being fixed. The matcher
-therefore skips path contexts with negative lookaround:
-
-```js
-/(?<![\\/])(DeepSeek)[ \u00A0]+(Harness)(?![\\/])/gi
-```
-
----
-
-## How it works: intercept, don't patch
-
-The plugin wraps `globalThis.fetch` and rewrites the body just before a request leaves
-the process:
-
-```
-POST https://copilot.tencent.com/v2/chat/completions
-        ↓
-   WorkBuddy/CodeBuddy host?  ──no──→ pass through untouched
-        ↓ yes
-   POST + JSON?               ──no──→ pass through untouched
-        ↓ yes
-   rewrite the system prompt
-        ↓
-   re-serialise → send
-```
-
-**No third-party file is modified.** Upgrading another plugin, switching plugins, or
-changing profiles cannot break it.
-
-### Safety properties
-
-| Condition | Behaviour |
-|---|---|
-| Non-WorkBuddy/CodeBuddy host | Passed through, byte-identical |
-| Non-POST request | Not inspected |
-| Body is not valid JSON | Passed through |
-| `messages` is not an array | Passed through |
-| The rewrite throws | Passed through |
-| **Master switch off** | **Byte-identical to the original request** |
-| Plugin uninstalled | Original `fetch` reference restored |
-
-Scope is limited to four hosts — `copilot.tencent.com`, `workbuddy.ai`, `codebuddy.ai`,
-`codebuddy.cn` — and to the `chat/completions` path.
-
-The design rule throughout: *a request must never fail because of a component whose
-only job was to make it succeed.* Hence the ordering (off switch → host → method → body)
-and the unconditional pass-through on anything unexpected.
+- You only use the official DeepSeek API, OpenRouter, or another non-Tencent channel
+- You have never hit the error above
 
 ---
 
@@ -146,13 +49,14 @@ and the unconditional pass-through on anything unexpected.
 git clone https://github.com/simlerick/dsh-wb400-fix.git
 ```
 
-Then ask DeepSeek​ Harness to install that directory as a plugin:
+Then tell DeepSeek​ Harness:
 
 > install `/path/to/dsh-wb400-fix` as a plugin
 
-Restart the harness once, and a **wb400修复** section appears in Settings.
+**Restart the harness once**, and a **wb400修复** section appears in Settings.
 
-### Manual install (link)
+<details>
+<summary>Manual install (link)</summary>
 
 In `~/.dsh/profiles/<profile>/package.json`:
 
@@ -165,6 +69,8 @@ In `~/.dsh/profiles/<profile>/package.json`:
 
 Then run `pnpm install` in that directory.
 
+</details>
+
 ---
 
 ## Usage
@@ -174,13 +80,15 @@ Open **Settings → wb400修复**:
 | Switch | Default | Effect |
 |---|---|---|
 | Master switch | on | Turning it off restores the original request exactly |
-| Neutralise identity keyword | on | The zero-width insertion described above |
-| Prepend system message | on | Adds one when the first message isn't a system role (the other cause of 11128) |
+| Neutralise identity keyword | on | The core feature — leave it on |
+| Prepend system message | on | Adds one when the first message isn't a system role (another cause of 11128) |
 | Hide brand word | off | More aggressive: also splits `DeepSeek` |
 
-The panel also shows how many matches have been neutralised and a before/after preview.
+The panel also shows how many matches have been neutralised, plus a before/after preview.
 
 **Changes take effect immediately — no restart needed.**
+
+> In most cases the defaults are already correct and you never need to touch anything.
 
 ---
 
@@ -194,6 +102,98 @@ The panel also shows how many matches have been neutralised and a before/after p
 
 Not required: the official client running in the background, an extra API key, or
 administrator rights.
+
+---
+
+## Why it works
+
+The error says "an unapproved channel." **That explanation is wrong**, and following
+it sends you off checking accounts, endpoints, headers and rate limits — all of which
+are fine.
+
+The real cause: **the upstream filters the system prompt by keyword.** Any request
+whose system prompt contains the phrase `DeepSeek​ Harness` is rejected.
+
+The harness injects that phrase into every request automatically — so this is not an
+intermittent glitch, it is a guaranteed trigger.
+
+### The fix
+
+Insert a zero-width space (`U+200B`) between the two words:
+
+```js
+// before
+"You are an AI agent powered by DeepSeek​ Harness."
+// after — visually identical; \u200B renders as nothing
+"You are an AI agent powered by DeepSeek\u200B Harness."
+```
+
+- The upstream check is **substring matching** — one extra character breaks the match
+- The model reads **the same text, same meaning**
+- **Lossless**: nothing deleted, reworded, or dropped from context
+
+Measured on the real request shape (316 tools, `effort=max`, `max_tokens=128000`):
+
+```
+original prompt  → 0 / 5 succeeded
+neutralised      → 5 / 5 succeeded
+```
+
+### One detail that is easy to get wrong
+
+Local file paths also contain the phrase:
+
+```
+D:\10_COD\DeepSeek Harness\resources\app.asar\dsh\
+```
+
+Inserting an invisible character there would hand the model a corrupted path and break
+tool calls. The matcher therefore skips path contexts with negative lookaround:
+
+```js
+/(?<![\\/])(DeepSeek)[ \u00A0]+(Harness)(?![\\/])/gi
+```
+
+---
+
+## How it is implemented
+
+No third-party file is modified. The plugin wraps `globalThis.fetch` and rewrites the
+body just before a request leaves the process:
+
+```
+POST https://copilot.tencent.com/v2/chat/completions
+        ↓
+   WorkBuddy/CodeBuddy host?  ──no──→ pass through untouched
+        ↓ yes
+   POST + JSON?               ──no──→ pass through untouched
+        ↓ yes
+   rewrite the system prompt
+        ↓
+   re-serialise → send
+```
+
+**The key design choice: nothing else's files are touched.** So upgrading another
+plugin, switching plugins, or changing profiles cannot break it.
+
+Scope is limited to four hosts — `copilot.tencent.com`, `workbuddy.ai`,
+`codebuddy.ai`, `codebuddy.cn` — and the `chat/completions` path.
+
+### Safety properties
+
+| Condition | Behaviour |
+|---|---|
+| Non-WorkBuddy/CodeBuddy host | Passed through, byte-identical |
+| Non-POST request | Not inspected |
+| Body is not valid JSON | Passed through |
+| `messages` is not an array | Passed through |
+| The rewrite throws | Passed through |
+| **Master switch off** | **Byte-identical to the original request** |
+| Plugin uninstalled | Original `fetch` reference restored |
+
+The rule behind all of it: *a request must never fail because of a component whose only
+job was to make it succeed.* So every unexpected case passes the request through
+instead of throwing.
 
 ---
 
@@ -213,12 +213,12 @@ administrator rights.
 ## Known limits
 
 - Works for requests made inside the local process; a server-side reverse proxy would
-  need separate handling.
+  need separate handling
 - If the upstream stops filtering on this phrase, the plugin is no longer needed —
-  the off switch is the correct response.
+  the off switch is the correct response
 - Plugins that bypass `globalThis.fetch` (e.g. a private `undici` instance) aren't
   covered by the primary path; an optional file-level hook exists as a fallback and
-  is not required for the main functionality.
+  is not required for the main functionality
 
 ---
 
