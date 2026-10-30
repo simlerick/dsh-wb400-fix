@@ -1,6 +1,6 @@
 {
   "name": "dsh-wb400-fix",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "type": "module",
   "description": "修复 DeepSeek​ Harness 里 WorkBuddy / CodeBuddy 的「请求被拦截」400 错误（Illegal API invocation from an unapproved channel / code 11128），对提示词无损，兼容所有 WB 反代插件。 Fixes the WorkBuddy/CodeBuddy 400 \"unapproved channel\" error (code 11128) with lossless system-prompt neutralisation.",
   "license": "MIT",

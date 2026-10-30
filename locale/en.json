@@ -16,10 +16,12 @@
     "hint": "Turning this off restores the original request untouched"
   },
   "option": {
+    "demoteSystem": "Demote system message (core)",
+    "demoteSystemHint": "Rewrites role=system into role=user with a prefix. Since Oct 2026 upstream judges by role; the only working fix, prompt lossless",
     "neutralize": "Neutralise identity keyword",
     "neutralizeHint": "Inserts an invisible separator inside \"DeepSeek Harness\" — same meaning, no longer blocked",
-    "ensureSystem": "Prepend system message",
-    "ensureSystemHint": "Adds a system message when the first one is not a system role (another 11128 cause)",
+    "ensureSystem": "Prepend system message (deprecated)",
+    "ensureSystemHint": "Ignored while demotion is on — adding a system message re-arms the exact rule",
     "hideIdentity": "Also hide brand word",
     "hideIdentityHint": "More aggressive: splits DeepSeek too. Off by default"
   },
@@ -47,7 +49,7 @@
     "patchOptional": "Legacy hook not applied (not required)"
   },
   "stats": {
-    "label": "Neutralised {n} spots, prepended system {m} times",
+    "label": "Demoted {k} system messages, neutralised {n} spots, prepended system {m} times",
     "idle": "No request needed rewriting yet"
   },
   "preview": {

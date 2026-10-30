@@ -10,14 +10,26 @@
  * 任一方改开关，另一方读到的是同一份配置 —— 一个开，另一个也开。
  * 文件不存在时用默认值（默认开启，符合「装了就想修好」的直觉）。
  *
- * ## 上游为什么拦
- * 腾讯 WorkBuddy / CodeBuddy 网关对 system prompt 做**关键词**内容风控：
- * 命中「DeepSeek Harness」就回 HTTP 400 / code 11128，报文却写成
- * `Illegal API invocation from an unapproved channel`（与渠道无关，纯误导）。
+ * ## 上游为什么拦（2026-10-30 规则已升级）
  *
- * 实测（真实 DSH 请求形状：316 tools + effort=max + max_tokens=128000）：
- *   含 "DeepSeek Harness" 原样          → 0/5 全失败
- *   含 "DeepSeek\u200B Harness"（零宽） → 5/5 全通过
+ * 旧规则（本插件 v1 修的）：对 system prompt 做**关键词子串匹配**，命中
+ * 「DeepSeek Harness」就回 400 / code 11128。插零宽空格即可绕开。
+ *
+ * **新规则（2026-10-30 实测）：不再看关键词，改成看 `role` 本身。**
+ * 只要 `messages` 里存在 `role: "system"` 且内容像 agent 指令，就拒绝。
+ * 关键词怎么中和都没用 —— 实测零宽空格、整词替换全部 400。
+ *
+ * 实测矩阵（真实 DSH 11.6KB system prompt）：
+ *   完整内容 + role=system              → 400（确定性 3/3）
+ *   完整内容 + role=user                → 200  ✅
+ *   零宽中和 + role=system               → 400
+ *   整词替换 + role=system               → 400
+ *   极简 system                          → 200
+ *   中性文本 12000 字元 + role=system     → 200（所以不是长度限制）
+ *
+ * 所以修法是**把 system 降级成 user**：指令一个字不丢，只是模型从
+ * 「系统设定」看到的内容变成「用户开头说的话」。这是绕过新规则、
+ * 同时保证提示词无损的唯一方式。
  *
  * ## 不能碰文件路径
  * 运行时上下文有 `D:\10_COD\DeepSeek Harness\resources\app.asar\dsh\`。
@@ -34,11 +46,18 @@ export const ZERO_WIDTH_SPACE = '\u200B'
 /** 默认配置 —— 与 meter 插件一致。 */
 export const LEXICON_DEFAULTS = {
   enabled: true,
+  /** 核心修复：把 role=system 降级为 role=user（新规则的唯一解法）。 */
+  demoteSystem: true,
+  /** 关键词中和：对旧规则有效，新规则下已非必需，保留作双保险。 */
   neutralize: true,
   hideIdentity: false,
-  ensureSystem: true,
+  /** ⚠️ 默认关闭：在 demoteSystem 生效时，补 system 反而会重新触发拦截。 */
+  ensureSystem: false,
   keywords: ['DeepSeek Harness'],
 }
+
+/** system 降级成 user 时加的前缀，让模型知道这是设定而非用户随口一说。 */
+export const SYSTEM_PREFIX = '【系统设定】\n'
 
 /** 保底 system：上游要求首条必须是 system prompt。 */
 export const FALLBACK_SYSTEM = 'You are a helpful assistant.'
@@ -65,9 +84,10 @@ export function normalizeLexiconConfig(raw) {
     : LEXICON_DEFAULTS.keywords
   return {
     enabled: input.enabled !== false,
+    demoteSystem: input.demoteSystem !== false,
     neutralize: input.neutralize !== false,
     hideIdentity: input.hideIdentity === true,
-    ensureSystem: input.ensureSystem !== false,
+    ensureSystem: input.ensureSystem === true,
     keywords: keywords.length > 0 ? keywords : LEXICON_DEFAULTS.keywords,
   }
 }
@@ -154,11 +174,32 @@ export function neutralizeMessage(message, config) {
   return hits
 }
 
-/** 对整份 messages 做中和 + 首条 system 兜底。永不抛错。 */
+/**
+ * 对整份 messages 做改写：**system 降级为 user** + 关键词中和。永不抛错。
+ *
+ * 降级是核心：新规则按 role 判定，system 在就会被拒。降级后指令完整保留，
+ * 只是角色变了。`ensureSystem` 在降级开启时被强制忽略 —— 补一条 system
+ * 等于把刚拆掉的雷又装回去。
+ */
 export function rewriteMessages(messages, rawConfig) {
   const config = normalizeLexiconConfig(rawConfig)
-  if (!config.enabled) return { hits: 0, injected: false, skipped: true }
-  if (!Array.isArray(messages)) return { hits: 0, injected: false }
+  if (!config.enabled) return { hits: 0, injected: false, demoted: 0, skipped: true }
+  if (!Array.isArray(messages)) return { hits: 0, injected: false, demoted: 0 }
+
+  let demoted = 0
+  if (config.demoteSystem) {
+    for (const message of messages) {
+      if (message === null || typeof message !== 'object') continue
+      if (message.role !== 'system') continue
+      message.role = 'user'
+      if (typeof message.content === 'string') {
+        message.content = SYSTEM_PREFIX + message.content
+      } else if (Array.isArray(message.content)) {
+        message.content.unshift({ type: 'text', text: SYSTEM_PREFIX })
+      }
+      demoted += 1
+    }
+  }
 
   let hits = 0
   if (config.neutralize) {
@@ -166,14 +207,14 @@ export function rewriteMessages(messages, rawConfig) {
   }
 
   let injected = false
-  if (config.ensureSystem) {
+  if (config.ensureSystem && !config.demoteSystem) {
     const first = messages[0]
     if (first === undefined || first === null || first.role !== 'system') {
       messages.unshift({ role: 'system', content: FALLBACK_SYSTEM })
       injected = true
     }
   }
-  return { hits, injected }
+  return { hits, injected, demoted }
 }
 
 /**
@@ -192,7 +233,7 @@ export function installLexiconHook({ getConfig, onStats, logger }) {
         const config = normalizeLexiconConfig(getConfig())
         if (!config.enabled) return
         const result = rewriteMessages(messages, config)
-        if (result.hits > 0 || result.injected) onStats?.(result)
+        if (result.hits > 0 || result.injected || result.demoted > 0) onStats?.(result)
       } catch (error) {
         logger?.debug?.(`workbuddy-fix: rewrite failed (${error instanceof Error ? error.message : String(error)})`)
       }

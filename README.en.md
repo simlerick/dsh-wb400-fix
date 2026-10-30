@@ -2,6 +2,11 @@
 
 **One line: stops the 400 error you get when using WorkBuddy / CodeBuddy models inside DeepSeek​ Harness.**
 
+> **v1.1 (2026-10-30)** The upstream rule changed: it no longer matches keywords — it now
+> rejects any `role="system"` message. The v1 zero-width trick **no longer works**.
+> This version demotes the system message into a user message instead.
+> See [Why it works](#why-it-works).
+
 [中文](README.md) · [English](README.en.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -80,7 +85,8 @@ Open **Settings → wb400修复**:
 | Switch | Default | Effect |
 |---|---|---|
 | Master switch | on | Turning it off restores the original request exactly |
-| Neutralise identity keyword | on | The core feature — leave it on |
+| **Demote system message** | **on** | **Core fix**: rewrites `role=system` into `role=user` with a prefix |
+| Neutralise identity keyword | on | The old-rule trick; not required now, kept as a second line of defence |
 | Prepend system message | on | Adds one when the first message isn't a system role (another cause of 11128) |
 | Hide brand word | off | More aggressive: also splits `DeepSeek` |
 
@@ -107,52 +113,67 @@ administrator rights.
 
 ## Why it works
 
-The error says "an unapproved channel." **That explanation is wrong**, and following
-it sends you off checking accounts, endpoints, headers and rate limits — all of which
-are fine.
+### The v1 explanation is obsolete
 
-The real cause: **the upstream filters the system prompt by keyword.** Any request
-whose system prompt contains the phrase `DeepSeek​ Harness` is rejected.
+v1 claimed "the upstream filters the system prompt by keyword — `DeepSeek​ Harness` gets rejected".
+**That stopped being true on 2026-10-30.**
 
-The harness injects that phrase into every request automatically — so this is not an
-intermittent glitch, it is a guaranteed trigger.
+Measured against the same real 11.6 KB DSH system prompt:
+
+| Attempt | Result |
+|---|---|
+| Send as-is | ❌ 400 |
+| Insert zero-width space (the v1 fix) | ❌ 400 |
+| Replace the phrase with `DeepSeek Agent` | ❌ 400 |
+| Rewrite the first sentence | ❌ 400 |
+| Prepend a paragraph | ❌ 400 |
+| **Change the message role from system to user** | ✅ **200** |
+
+So the upstream no longer looks at keywords at all.
+
+### The new rule: it looks at `role`
+
+The error text blames "an unapproved channel", but **that wording is misleading** — it sends you
+chasing accounts, domains, headers and rate limits.
+
+What actually happens: if `messages` contains a `role: "system"` entry whose content looks like
+agent instructions, the request is rejected with
+
+```json
+{"code": 11128,
+ "msg": "Illegal API invocation from an unapproved channel",
+ "displayTips": {"en": "This call failed channel verification, possibly
+   because it was not sent from an official client."}}
+```
+
+### Not a length limit — this matters
+
+| Test | Result |
+|---|---|
+| 12,000 chars of neutral text as `role=system` | ✅ 200 |
+| Real DSH system prompt, first 6,090 chars | ✅ 200 |
+| Same prompt, first 6,590 chars | ❌ 400 |
+
+A much longer neutral prompt passes, so there is no length threshold. And a segment-by-segment
+bisect finds no fixed keyword either — this is a **content-based classification**, not something
+you can fix by replacing one word.
 
 ### The fix
 
-Insert a zero-width space (`U+200B`) between the two words:
+**Demote the system message to a user message**, with a marker prefix:
 
 ```js
 // before
-"You are an AI agent powered by DeepSeek​ Harness."
-// after — visually identical; \u200B renders as nothing
-"You are an AI agent powered by DeepSeek\u200B Harness."
+{ role: "system", content: "You are an AI agent powered by DeepSeek Harness. ..." }
+
+// after
+{ role: "user",   content: "【系统设定】\nYou are an AI agent powered by DeepSeek Harness. ..." }
 ```
 
-- The upstream check is **substring matching** — one extra character breaks the match
-- The model reads **the same text, same meaning**
-- **Lossless**: nothing deleted, reworded, or dropped from context
-
-Measured on the real request shape (316 tools, `effort=max`, `max_tokens=128000`):
-
-```
-original prompt  → 0 / 5 succeeded
-neutralised      → 5 / 5 succeeded
-```
-
-### One detail that is easy to get wrong
-
-Local file paths also contain the phrase:
-
-```
-D:\10_COD\DeepSeek Harness\resources\app.asar\dsh\
-```
-
-Inserting an invisible character there would hand the model a corrupted path and break
-tool calls. The matcher therefore skips path contexts with negative lookaround:
-
-```js
-/(?<![\\/])(DeepSeek)[ \u00A0]+(Harness)(?![\\/])/gi
-```
+- **Nothing is lost from the prompt**: 11,649 → 11,659 chars (only the prefix was added)
+- Verified that the model still reads instructions living in the *second half* of the original system prompt
+- Trade-off: the model treats the instructions as "something the user said up front", which is
+  slightly weaker than a true system message
 
 ---
 

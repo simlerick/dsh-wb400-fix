@@ -51,7 +51,7 @@ export function apply(ctx, config) {
         : 'desktop'
 
   /* --- 运行时统计（面板展示「已中和多少次」）------------------------- */
-  const stats = { rewrites: 0, hits: 0, injected: 0, lastAt: null }
+  const stats = { rewrites: 0, hits: 0, injected: 0, demoted: 0, lastAt: null }
 
   /* --- 主通道：fetch 层钩子（不依赖任何第三方文件）-------------------
    *
@@ -73,12 +73,16 @@ export function apply(ctx, config) {
         return {
           hits: result.hits ?? 0,
           injected: Boolean(result.injected),
-          changed: (result.hits ?? 0) > 0 || Boolean(result.injected),
+          demoted: result.demoted ?? 0,
+          // ⚠️ demoted 必须计入 changed：否则 fetch-hook 会以为「没改动」而
+          // 原样发出被降级前的 body，修复直接失效（这是最容易漏的一处）。
+          changed: (result.hits ?? 0) > 0 || Boolean(result.injected) || (result.demoted ?? 0) > 0,
         }
       },
       onStats: (result) => {
         stats.rewrites += 1
         stats.hits += result.hits
+        stats.demoted += result.demoted ?? 0
         if (result.injected) stats.injected += 1
         stats.lastAt = Date.now()
       },
@@ -100,6 +104,7 @@ export function apply(ctx, config) {
       onStats: (result) => {
         stats.rewrites += 1
         stats.hits += result.hits
+        stats.demoted += result.demoted ?? 0
         if (result.injected) stats.injected += 1
         stats.lastAt = Date.now()
       },
@@ -207,6 +212,7 @@ export function apply(ctx, config) {
             stats.rewrites = 0
             stats.hits = 0
             stats.injected = 0
+            stats.demoted = 0
             stats.lastAt = null
           }
           return okResponse({ config: next })
@@ -250,8 +256,11 @@ export function apply(ctx, config) {
           return okResponse({
             before: sample,
             after: messages[0].content,
+            beforeRole: 'system',
+            afterRole: messages[0].role,
             hits: result.hits,
             injected: result.injected,
+            demoted: result.demoted ?? 0,
           })
         } catch (error) {
           return errorResponse('wbfix/dry-run-failed', error instanceof Error ? error.message : String(error))
@@ -313,6 +322,6 @@ export function apply(ctx, config) {
     }
   })
 
-  logger.info?.('workbuddy-fix: ready（关键词风控中和，设置页可开关）')
+  logger.info?.('workbuddy-fix: ready（system 降级 + 关键词中和，设置页可开关）')
 }
 

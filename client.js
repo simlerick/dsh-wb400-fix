@@ -69,10 +69,12 @@ window.__ModuleLoader__.load({
       'state.off': '已关闭',
       'master.label': '总开关',
       'master.hint': '关闭后完全恢复原始请求，一个字节都不改',
+      'option.demoteSystem': '降级 system 消息（核心）',
+      'option.demoteSystemHint': '把 system 消息改成 user 消息并加「系统设定」前缀。2026-10 起上游按 role 判定，这是唯一有效解法，指令无损',
       'option.neutralize': '中和身份关键词',
       'option.neutralizeHint': '把「DeepSeek​ Harness」中间插入不可见分隔符，语义不变、上游不再拦截',
-      'option.ensureSystem': '补首条 system',
-      'option.ensureSystemHint': '首条消息不是 system 时自动补一条（11128 的另一个成因）',
+      'option.ensureSystem': '补首条 system（已废弃）',
+      'option.ensureSystemHint': '降级开启时这项会被忽略——补 system 等于把刚拆掉的雷装回去',
       'option.hideIdentity': '隐藏品牌词',
       'option.hideIdentityHint': '更激进：连 DeepSeek 也打散。默认关闭',
       'why.title': '这个报错到底是怎么回事',
@@ -89,7 +91,7 @@ window.__ModuleLoader__.load({
       'status.repairing': '处理中…',
       'status.meterLinked': '与「用量计量」插件联动中（共享同一份开关）',
       'status.standalone': '独立运行（未检测到用量计量插件）',
-      'stats.label': '本机已中和 {n} 处，补 system {m} 次',
+      'stats.label': '本机已降级 system {k} 条，中和 {n} 处，补 system {m} 次',
       'stats.idle': '还没有需要改写的请求',
       'preview.title': '效果预览',
       'preview.before': '改写前',
@@ -108,10 +110,12 @@ window.__ModuleLoader__.load({
       'state.off': 'Off',
       'master.label': 'Master switch',
       'master.hint': 'Turning this off restores the original request untouched',
+      'option.demoteSystem': 'Demote system message (core)',
+      'option.demoteSystemHint': 'Rewrites role=system into role=user with a prefix. Since Oct 2026 upstream judges by role; this is the only working fix and loses no prompt text',
       'option.neutralize': 'Neutralise identity keyword',
       'option.neutralizeHint': 'Inserts an invisible separator inside "DeepSeek Harness" — same meaning, no longer blocked',
-      'option.ensureSystem': 'Prepend system message',
-      'option.ensureSystemHint': 'Adds a system message when the first one is not a system role (another 11128 cause)',
+      'option.ensureSystem': 'Prepend system message (deprecated)',
+      'option.ensureSystemHint': 'Ignored while demotion is on — adding a system message re-arms the exact rule demotion removed',
       'option.hideIdentity': 'Also hide brand word',
       'option.hideIdentityHint': 'More aggressive: splits DeepSeek too. Off by default',
       'why.title': 'What this error actually is',
@@ -128,7 +132,7 @@ window.__ModuleLoader__.load({
       'status.repairing': 'Working…',
       'status.meterLinked': 'Linked with the usage-meter plugin (shared switches)',
       'status.standalone': 'Standalone (usage-meter plugin not detected)',
-      'stats.label': 'Neutralised {n} spots, prepended system {m} times',
+      'stats.label': 'Demoted {k} system messages, neutralised {n} spots, prepended system {m} times',
       'stats.idle': 'No request needed rewriting yet',
       'preview.title': 'Preview',
       'preview.before': 'Before',
@@ -309,7 +313,7 @@ window.__ModuleLoader__.load({
         postJSON('/set', { patch, resetStats: true })
           .then((res) => {
             setState((prev) => prev.value
-              ? { ...prev, value: { ...prev.value, config: res.config, stats: { rewrites: 0, hits: 0, injected: 0 } } }
+              ? { ...prev, value: { ...prev.value, config: res.config, stats: { rewrites: 0, hits: 0, injected: 0, demoted: 0 } } }
               : prev)
             // 刷新预览，让用户立刻看到改写效果
             return postJSON('/dry-run', { patch })
@@ -363,6 +367,14 @@ window.__ModuleLoader__.load({
               }),
               h('div', { className: 'wbfix-sep' }),
               h(ToggleRow, {
+                label: t('option.demoteSystem'),
+                hint: t('option.demoteSystemHint'),
+                checked: config.demoteSystem !== false,
+                busy,
+                disabled: !enabled,
+                onChange: (next) => apply({ demoteSystem: next }),
+              }),
+              h(ToggleRow, {
                 label: t('option.neutralize'),
                 hint: t('option.neutralizeHint'),
                 checked: config.neutralize !== false,
@@ -373,7 +385,7 @@ window.__ModuleLoader__.load({
               h(ToggleRow, {
                 label: t('option.ensureSystem'),
                 hint: t('option.ensureSystemHint'),
-                checked: config.ensureSystem !== false,
+                checked: config.ensureSystem === true,
                 busy,
                 disabled: !enabled,
                 onChange: (next) => apply({ ensureSystem: next }),
@@ -414,7 +426,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'wbfix-meta' },
                 h('span', null,
                   stats.rewrites > 0
-                    ? t('stats.label', { n: stats.hits || 0, m: stats.injected || 0 })
+                    ? t('stats.label', { k: stats.demoted || 0, n: stats.hits || 0, m: stats.injected || 0 })
                     : t('stats.idle'))),
 
               h('div', { className: 'wbfix-meta' },
