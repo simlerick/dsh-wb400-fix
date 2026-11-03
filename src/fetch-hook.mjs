@@ -18,8 +18,6 @@
  *   ⑤ 可完整卸载（restore 原 fetch 引用）
  */
 
-import { needsConversationHeaders, ensureConversationHeaders } from './conversation-headers.mjs'
-
 /** 命中这些主机名才算 WB 系请求。 */
 const WB_HOSTS = [
   'copilot.tencent.com',
@@ -148,20 +146,17 @@ export function installFetchHook({
       )
       return original(input, init)
     }
-    // 国际版：即使 messages 无需改写，也必须补会话头，否则 11128。
-    const needConvHeaders = needsConversationHeaders(url)
-    if (!result && !needConvHeaders) return original(input, init)
-    if (result && !result.changed && !result.injected && !needConvHeaders) return original(input, init)
+    if (!result || (!result.changed && !result.injected)) return original(input, init)
 
     try {
       // demoted 必须一起上报，否则面板上「已降级 N 条」永远是 0 —— 而降级
       // 恰恰是本版的核心修复，统计不到会被误以为没生效。
       onStats?.({
-        hits: result?.hits ?? 0,
-        injected: Boolean(result?.injected),
-        demoted: result?.demoted ?? 0,
-        mentions: result?.mentions ?? 0,
-        identity: result?.identity ?? 0,
+        hits: result.hits ?? 0,
+        injected: Boolean(result.injected),
+        demoted: result.demoted ?? 0,
+        mentions: result.mentions ?? 0,
+        identity: result.identity ?? 0,
       })
     } catch {
       /* 统计失败不影响主流程 */
@@ -171,9 +166,6 @@ export function installFetchHook({
     const headers = new Headers(nextInit?.headers ?? request?.headers ?? undefined)
     headers.delete('content-length')
     headers.set('content-type', 'application/json')
-    // 国际版（www.workbuddy.ai）强制要求三个会话标识头，缺任一就 11128
-    // request illegal。这是它跟国内版最大的差异：报错文案一样，原因完全不同。
-    if (needsConversationHeaders(url)) ensureConversationHeaders(headers)
 
     const rebuilt = {
       ...(nextInit ?? {}),
