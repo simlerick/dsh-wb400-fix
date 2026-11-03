@@ -2,6 +2,50 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-11-03
+
+### 新增：WorkBuddy 国际版（www.workbuddy.ai）支持
+
+国际版的 11128 跟国内版**根因完全不同**，但报错文案一模一样。
+
+**真正原因：缺少三个会话标识头。**
+
+```
+X-Conversation-ID
+X-Conversation-Message-ID
+X-Conversation-Request-ID
+```
+
+实测（真实凭据）：
+
+| 请求 | 结果 |
+|---|---|
+| 不带三件套 | ❌ 400 `request illegal` |
+| 带三件套（值随意 UUID） | ⚠️ 400 `first message is not system prompt`（**错误变了 = 校验已过**） |
+| 三件套 + system 首条 | ✅ **200** |
+
+关键点：
+
+- 三个头只需是唯一字符串，服务端**不校验它们之间的关联**，也不要求跨请求一致
+- **不需要**解密 App 的 `$wbEncrypted` token —— `~/.dsh/.credentials.yaml` 里的明文 token 加三个头就能用（实测 200）
+- 不需要 `X-IDE-*`、`X-User-Id`、`X-Requested-With` 等头（最小头实测 200）
+
+### 改动
+
+- 新增 `src/conversation-headers.mjs`：识别国际版 chat 端点、补齐三个会话头
+- `fetch-hook` 接入：即使 messages 无需改写，只要命中国际版端点也会补头
+- 国际版同时享受国内版的两处 body 修复（`@` 转义、身份句）
+
+### 三个版本对照（同一个 11128 错误码，三个不同原因）
+
+| 渠道 | 真实原因 | 修法 |
+|---|---|---|
+| CodeBuddy 国内版 | `@`-mention 路径解析 + 身份句模板 | body 改写 |
+| WorkBuddy 国际版 | 缺三个会话头 | 补 header |
+| 早期误判 | 以为检查 `role=system` | 降级成 user（**错的**，已改为默认关闭） |
+
+---
+
 ## [1.3.0] - 2026-11-03
 
 ### 根因修正：两个参数校验，不是 role 检查
