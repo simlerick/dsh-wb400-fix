@@ -149,7 +149,13 @@ export function installFetchHook({
     if (!result || (!result.changed && !result.injected)) return original(input, init)
 
     try {
-      onStats?.({ hits: result.hits ?? 0, injected: Boolean(result.injected) })
+      // demoted 必须一起上报，否则面板上「已降级 N 条」永远是 0 —— 而降级
+      // 恰恰是本版的核心修复，统计不到会被误以为没生效。
+      onStats?.({
+        hits: result.hits ?? 0,
+        injected: Boolean(result.injected),
+        demoted: result.demoted ?? 0,
+      })
     } catch {
       /* 统计失败不影响主流程 */
     }
