@@ -31,6 +31,10 @@ import {
   inspectLexicon,
   resolvePackFile,
 } from './src/patch.mjs'
+import {
+  applySendPatch,
+  describeSendPatch,
+} from './src/send-patch.mjs'
 import { installFetchHook, isFetchHookInstalled } from './src/fetch-hook.mjs'
 
 export const name = 'workbuddy-fix'
@@ -151,6 +155,53 @@ export function apply(ctx, config) {
     }
   }, 'workbuddy-fix: patch self-heal')
 
+  /* --- send() 补丁：两条 11128 修复的正主 ----------------------------
+   *
+   * ## 为什么必须改 pack.js 而不是包 fetch
+   *
+   * OFM 的 fetchImpl 来自 createChannelFetch()，是它自己的包装器，
+   * 不是 globalThis.fetch。包 globalThis.fetch 的钩子**完全拦不到** ——
+   * v1.4 就是这么失败的（面板显示已装，实际一个请求都没改到）。
+   *
+   * ## 补什么
+   *
+   * registerBuddyLlm 里那个 adapter 的 send() 是唯一能同时改 headers
+   * 和 body 的注入点：
+   *   [wbfix:@]    buddy   → body 里 @ 转义成 \@（国内 11128）
+   *   [wbfix:conv] workbuddy → 补三个 X-Conversation-* 头（国际 11128）
+   *
+   * 两者按 product.id 分流，互不影响。
+   */
+  ctx.effect(() => {
+    let cancelled = false
+    const run = () => {
+      if (cancelled) return
+      try {
+        const packFile = resolvePackFile({ dshHome, profile })
+        const state = describeSendPatch(packFile)
+        if (!state.ok) {
+          logger.debug?.(`workbuddy-fix: send 补丁跳过（${state.reason}）`)
+          return
+        }
+        if (state.applied) return
+        const result = applySendPatch({ packFile, dryRun: false })
+        if (result.applied) {
+          logger.info?.('workbuddy-fix: 11128 修复补丁已自动重打（pnpm 重装过 OFM），重启 DSH 后生效。')
+        } else if (result.reason !== 'already-patched') {
+          logger.warn?.(`workbuddy-fix: send 补丁自愈失败 —— ${result.reason}`)
+        }
+      } catch (error) {
+        logger.debug?.(`workbuddy-fix: send 补丁自愈异常（${error instanceof Error ? error.message : String(error)}）`)
+      }
+    }
+    const timer = setTimeout(run, 2200)
+    if (typeof timer.unref === 'function') timer.unref()
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, 'workbuddy-fix: send patch self-heal')
+
   /* --- HTTP 响应助手 ------------------------------------------------ */
 
   // ⚠️ connection.fetch 的 handler 必须返回标准 Response 对象。
@@ -194,6 +245,8 @@ export function apply(ctx, config) {
             stats: { ...stats },
             // 主通道：fetch 层钩子。装上了就等于功能可用，与 OFM 无关。
             fetchHookInstalled: isFetchHookInstalled(),
+            // 真正生效的那条：直接打进 pack.js 的 send()
+            sendPatch: describeSendPatch(resolvePackFile({ dshHome, profile })),
             // 兼容通道：pack.js 那行。装不上不算故障，只影响非 fetch 请求。
             patchPresent: pack.ok ? pack.patched : false,
             patchError: pack.ok ? null : pack.reason,

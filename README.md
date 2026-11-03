@@ -166,6 +166,39 @@ text.replace(/(^|\s)@/g, '$1\\@')
 
 两处都**语义不变**：`\@` 就是转义后的 `@`；身份句只是换了动词。
 
+### 触发条件 3：WorkBuddy 国际版缺三个会话头
+
+国际版（`www.workbuddy.ai`）的 11128 跟国内版**根因完全不同**，报错文案却一模一样
+（`request illegal` / 「请求被拦截，请重新发送」）。
+
+真正原因是缺三个会话标识头：
+
+```
+X-Conversation-ID
+X-Conversation-Message-ID
+X-Conversation-Request-ID
+```
+
+实测：
+
+| 请求 | 结果 |
+|---|---|
+| 不带三件套 | ❌ 400 `request illegal` |
+| 带三件套（值随意 UUID） | ⚠️ 400 `first message is not system prompt` ← **错误变了 = 校验已过** |
+| 三件套 + system 首条 | ✅ **200** |
+
+关键点：
+
+- 三个头只需是唯一字符串，服务端**不校验它们之间的关联**，也不要求跨请求一致
+- **不需要**解密 App 的 `$wbEncrypted` token —— `~/.dsh/.credentials.yaml` 的明文 token
+  加三个头就能用（实测 200）
+- **不需要** `X-IDE-*`、`X-User-Id`、`X-Requested-With`（最小头实测 200）
+
+> **排查提示**：我最初一直用 `messages: []` 空数组测试，空数组会**先**触发
+> `first message is not system prompt`，而这个检查发生在会话头校验**之前**，
+> 导致误判成「客户端来源判定，客户端修不了」。
+> **错误信息变了（哪怕是变成另一个错误），就说明前一道校验已经过了。**
+
 ### 一处历史误判（已修正）
 
 早期版本（v1.0–v1.2）误以为「网关检查 `role="system"`」，做法是把 system 消息降级成 user。
@@ -178,27 +211,46 @@ text.replace(/(^|\s)@/g, '$1\\@')
 
 ## 它是怎么实现的
 
-不改任何第三方文件，只包住 `globalThis.fetch`，在请求发出去之前改写 body：
+### ⚠️ 不要包 `globalThis.fetch`
 
+v1.4 初版把修复做成 fetch 钩子（包 `globalThis.fetch`），**完全无效**——面板显示
+"已安装"，实际一个请求都拦不到。
+
+原因：OFM 的 `fetchImpl` 来自它自己的包装器：
+
+```js
+const network = createChannelFetch({ outlet: config.outlet })
+// ...
+fetchImpl: network.fetch   // ← 不是 globalThis.fetch
 ```
-POST https://copilot.tencent.com/v2/chat/completions
-        ↓
-   是 WB 域名吗？ ──否──→ 原样发出
-        ↓ 是
-   是 POST + JSON 吗？ ──否──→ 原样发出
-        ↓ 是
-   改写 messages 里的 system prompt
-        ↓
-   重新序列化 → 发出
+
+### 正确做法：注入 `send()`
+
+`registerBuddyLlm` 里那个 adapter 的 `send(credential, body, options)` 是唯一能同时
+改 headers 和 body 的注入点。补丁在那里插入两段，按 `product.id` 分流：
+
+```js
+// [wbfix:@]    国内 CodeBuddy：body 里 @ → \@
+if (this.product.id === "buddy" && body.includes("@")) {
+  body = JSON.stringify(JSON.parse(body), /* 逐条转义 messages */)
+}
+
+// [wbfix:conv] 国际 WorkBuddy：补三个会话头
+if (this.product.id === "workbuddy") {
+  for (const name of ["X-Conversation-ID", "X-Conversation-Message-ID", "X-Conversation-Request-ID"])
+    headers.set(name, randomUUID())
+}
 ```
 
-**关键设计：不修改任何第三方文件。**
-所以别人升级插件、换插件、换 profile 都不会让你失效。
+两者互不影响。
 
-只命中这 4 个域名的 `chat/completions`：
-`copilot.tencent.com` · `workbuddy.ai` · `codebuddy.ai` · `codebuddy.cn`
+### 自愈
 
-### 安全边界
+`pnpm install` 重装 OFM 会冲掉注入。插件启动后约 2.2 秒自动检查并重打，幂等
+（已打过就跳过，不会重复插入）。面板「状态」里能看到 `sendPatch.buddyFix` /
+`sendPatch.workbuddyFix` 各自的真实状态。
+
+## 安全边界
 
 | 情况 | 行为 |
 |---|---|

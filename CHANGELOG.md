@@ -2,6 +2,71 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.4.0] - 2026-11-03
+
+### 支持 WorkBuddy 国际版（www.workbuddy.ai）
+
+国际版的 11128 跟国内版**根因完全不同**，报错文案却一模一样。
+
+**真正原因：缺少三个会话标识头。**
+
+```
+X-Conversation-ID
+X-Conversation-Message-ID
+X-Conversation-Request-ID
+```
+
+实测矩阵（真实凭据）：
+
+| 请求 | 结果 |
+|---|---|
+| 不带三件套 | ❌ 400 `request illegal` |
+| 带三件套（值随意 UUID） | ⚠️ 400 `first message is not system prompt`（**错误变了 = 校验已过**） |
+| 三件套 + system 首条 | ✅ **200** |
+
+关键点：
+
+- 三个头只需是唯一字符串，服务端**不校验它们之间的关联**，也不要求跨请求一致
+- **不需要**解密 App 的 `$wbEncrypted` token —— `~/.dsh/.credentials.yaml` 的明文 token 加三个头就能用
+- **不需要** `X-IDE-*`、`X-User-Id`、`X-Requested-With`（最小头实测 200）
+
+### 关键修正：为什么必须改 pack.js 而不是包 fetch
+
+v1.4 初版把修复做成 `fetch` 钩子（包 `globalThis.fetch`），**完全无效**。
+
+原因：OFM 的 `fetchImpl` 来自 `createChannelFetch()`：
+
+```js
+const network = createChannelFetch({ outlet: config.outlet })
+// ...
+fetchImpl: network.fetch   // ← 自定义包装器，不是 globalThis.fetch
+```
+
+所以包 `globalThis.fetch` 的钩子**一个请求都拦不到**，面板却显示"已安装"。
+
+现在改为直接注入 `registerBuddyLlm` 的 `send()` —— 唯一能同时改 headers 和 body 的位置：
+
+```js
+// [wbfix:@]    国内：body 里 @ → \@
+// [wbfix:conv] 国际：headers 补三个 X-Conversation-*
+```
+
+按 `product.id` 分流，两者互不影响。
+
+### 新增自愈
+
+`pnpm install` 重装 OFM 会冲掉 `pack.js` 里的注入。插件启动后 2.2 秒自动检查并重打，幂等（已打过就跳过）。
+
+### 三个渠道对照（同一个 11128，三种不同原因）
+
+| 渠道 | 真实原因 | 修法 |
+|---|---|---|
+| CodeBuddy 国内 | `@`-mention 路径解析 + 身份句模板 | body 改写 |
+| WorkBuddy 国际 | 缺三个会话头 | 补 header |
+| 早期误判 | 以为检查 `role=system` | 错的，已废弃 |
+
+---
+
 ## [1.3.0] - 2026-11-03
 
 ### 根因修正：两个参数校验，不是 role 检查
