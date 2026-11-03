@@ -2,8 +2,9 @@
 
 **一句话：让 DeepSeek​ Harness 里用 WorkBuddy / CodeBuddy 模型时不再报 400。**
 
-> **v1.1（2026-10-30）** 上游规则已升级：从「关键词匹配」改成「检查 `role="system"`」。
-> v1 的零宽空格手法**已经失效**，本版改为把 system 消息降级成 user 消息。
+> **v1.3（2026-11-03）根因修正**：真正原因是网关的两处**参数校验**——
+> ① `@`-mention 后跟路径样式长句；② 产品身份句模板匹配。
+> 早期版本误判为「检查 role」，现已改正。零宽空格**确实无效**。
 > 详见 [它为什么能修好](#它为什么能修好原理)。
 
 [中文](README.md) · [English](README.en.md)
@@ -79,9 +80,11 @@ git clone https://github.com/simlerick/dsh-wb400-fix.git
 | 开关 | 默认 | 作用 |
 |---|---|---|
 | 总开关 | 开 | 关掉即完全恢复原始请求 |
-| **降级 system 消息** | **开** | **核心修复**：把 `role=system` 改成 `role=user`，加「系统设定」前缀 |
-| 中和身份关键词 | 开 | 旧规则的手法，新规则下非必需，保留作双保险 |
-| 补首条 system | **关** | 已废弃。降级开启时会被忽略——补 system 等于把刚拆掉的雷装回去 |
+| **转义 @-mention** | **开** | **核心修复 1**：把 `@` 转成 `\@`，网关不再当文件引用解析 |
+| **改写身份句** | **开** | **核心修复 2**：`powered by X Harness` → `running in X Harness` |
+| 中和身份关键词 | 开 | 零宽空格手法（对当前规则**无效**，保留作历史兼容） |
+| 降级 system 消息 | **关** | ⚠️ 历史误判。真实根因不是 role，仅留作兜底 |
+| 补首条 system | **关** | 已废弃 |
 | 隐藏品牌词 | 关 | 更激进：连 `DeepSeek` 也打散 |
 
 面板还会显示：已降级多少条 system、已中和多少处、改写前后对照预览。
@@ -106,85 +109,70 @@ git clone https://github.com/simlerick/dsh-wb400-fix.git
 
 ## 它为什么能修好（原理）
 
-### ⚠️ 先说清楚：v1 的解释已经过时了
+### 真正的根因：两个独立的「参数校验」被包装成安全拦截
 
-v1 的 README 写的是「上游对 system prompt 做关键词风控，出现 `DeepSeek​ Harness` 就拒」。
-**这个说法在 2026-10-30 之后不成立了。**
+报错文案 `Illegal API invocation from an unapproved channel`（code 11128）**是误导**。
+它跟渠道、账号、请求头、限流都无关。实际是 CodeBuddy 网关的两处**参数校验失败**，
+共用同一个错误码和文案。
 
-实测（同一份 11.6KB 的真实 DSH system prompt）：
+#### 触发条件 1：`@`-mention 后跟路径样式长句
 
-| 手法 | 结果 |
+网关把请求文本里的 `@` 当**文件引用**解析。DSH 系统提示里有这句：
+
+```
+Tokens prefixed with @ are paths the user explicitly referenced.
+Relative paths resolve from the workspace root ...
+```
+
+`@ ` 后面接长路径样式文本 → 网关尝试解析为文件路径 → 失败 → 11128。
+
+实测：
+
+| 变体 | 结果 |
 |---|---|
-| 原样发出 | ❌ 400 |
-| 插零宽空格（v1 的核心手法） | ❌ 400 |
-| 整词替换成 `DeepSeek Agent` | ❌ 400 |
-| 改掉第一句 | ❌ 400 |
-| 前面加中文说明 | ❌ 400 |
-| **把 system 消息改成 user 消息** | ✅ **200** |
+| 原句含 `@ ` + 长句 | ❌ 400 |
+| `@` → `\@`（反斜杠转义） | ✅ 200 |
+| `@` → `Z` | ✅ 200 |
+| `@` 单独 / `@abc` / `@` 后接中文 | ✅ 200 |
+| `@` → 全角 `＠` / 零宽 / NBSP / 删空格 | ❌ 全部 400 |
 
-所以上游**不再看关键词**了。
+#### 触发条件 2：产品身份句
 
-### 真正的新规则：看 `role`
+`You are an AI agent powered by DeepSeek Harness.` 这句作为 system prompt 开头就 400。
 
-报错文案说「未获批准的渠道」，**这句话是编的**，会把人带偏去查账号、域名、请求头、限流。
-
-真实机制：
-
-```
-messages: [
-  { "role": "system", "content": "You are an AI agent powered by ..." },  ← 只要这条在，就拒
-  { "role": "user",   "content": "..." }
-]
-```
-
-只要 `messages` 里存在 `role: "system"` 且内容像 agent 指令，请求就被拒，返回：
-
-```json
-{"code": 11128,
- "msg": "Illegal API invocation from an unapproved channel",
- "displayTips": {"en": "This call failed channel verification, possibly
-   because it was not sent from an official client."}}
-```
-
-也就是说：上游在判断「这条 system prompt 像不像官方 IDE 客户端发的」。
-
-### 关键实验：不是长度问题
-
-这一点很重要，否则容易走错方向：
-
-| 测试 | 结果 |
+| 变体 | 结果 |
 |---|---|
-| 中性文本 12000 字元（`role=system`） | ✅ 200 |
-| DSH 真实 system prompt 6090 字元 | ✅ 200 |
-| 同一份 6590 字元 | ❌ 400 |
+| `You are an AI agent powered by DeepSeek Harness.` | ❌ 400 |
+| `DeepSeek Harness`（单独，无上下文） | ✅ 200 |
+| `DeepSeek` / `Harness` 单独 | ✅ 200 |
+| `You are an AI agent.` | ✅ 200 |
+| `DeepSeek`→`Deep` 或 `Harness`→`H` | ✅ 200 |
+| `DeepSeek\u200B Harness`（零宽） | ❌ 仍 400 |
 
-同样的角色、更长的中性文本能过，说明**不是长度阈值**，是内容特征。
-
-而逐段二分又找不到固定关键词——所以这是**基于内容的分类判定**，不是一个可以「替换掉某个词」就解决的规则。
+说明网关对**整句模板**做匹配，不是单词黑名单，也不是长度阈值。
 
 ### 怎么修的
 
-**把 system 消息降级成 user 消息**，并加一个前缀让模型知道这是设定：
+在 `globalThis.fetch` 层拦截发往 WB 域名的请求，改写 `messages` 里的文本：
 
 ```js
-// 改写前
-{ role: "system", content: "You are an AI agent powered by DeepSeek Harness. ..." }
+// 修复 1：@-mention 转义
+text.replace(/(^|\s)@/g, '$1\\@')
 
-// 改写后
-{ role: "user",   content: "【系统设定】\nYou are an AI agent powered by DeepSeek Harness. ..." }
+// 修复 2：身份句改写
+'You are an AI agent powered by DeepSeek Harness.'
+  → 'You are an AI agent running in DeepSeek Harness.'
 ```
 
-- **提示词一个字都没丢**：长度从 11649 变成 11659（只多了前缀）
-- 模型仍然能读到全部指令，已验证它能正确回答只在 system prompt 后半段才有的内容
-- 代价：模型把指令当成「用户开头说的话」，理论约束力比真正的 system message 略弱
+两处都**语义不变**：`\@` 就是转义后的 `@`；身份句只是换了动词。
 
-### 为什么还留着零宽空格那套
+### 一处历史误判（已修正）
 
-它对新规则已经无效，但：
-- 万一上游回退到旧规则，它还能起作用
-- 成本近乎为零（只是几个不可见字符）
+早期版本（v1.0–v1.2）误以为「网关检查 `role="system"`」，做法是把 system 消息降级成 user。
+**这个判断是错的**——真实根因是上面两处。降级之所以碰巧能过，是因为它改变了文本结构
+（加了前缀），让 `@` 和身份句的匹配条件不再成立。
 
-所以保留为「双保险」，默认开启。
+现在 `demoteSystem` 默认**关闭**，仅保留为可选兜底。主修是 `escapeMentions`（默认开启）。
 
 ---
 

@@ -46,18 +46,124 @@ export const ZERO_WIDTH_SPACE = '\u200B'
 /** 默认配置 —— 与 meter 插件一致。 */
 export const LEXICON_DEFAULTS = {
   enabled: true,
-  /** 核心修复：把 role=system 降级为 role=user（新规则的唯一解法）。 */
-  demoteSystem: true,
+  /**
+   * 核心修复：转义 @-mention。这是 11128 的真正原因——网关把 `@ ` 后跟
+   * 长路径样式文本当文件引用解析，解析失败就报「unapproved channel」。
+   */
+  escapeMentions: true,
+  /**
+   * 可选：把 role=system 降级为 role=user。
+   * ⚠️ 这不是 11128 的根因（实测证明根因是 @-mention），默认关闭。
+   * 早先版本误判为「校验看 role」，降级只是碰巧绕过，保留作为兜底开关。
+   */
+  demoteSystem: false,
   /** 关键词中和：对旧规则有效，新规则下已非必需，保留作双保险。 */
   neutralize: true,
-  hideIdentity: false,
-  /** ⚠️ 默认关闭：在 demoteSystem 生效时，补 system 反而会重新触发拦截。 */
-  ensureSystem: false,
   keywords: ['DeepSeek Harness'],
 }
 
 /** system 降级成 user 时加的前缀，让模型知道这是设定而非用户随口一说。 */
 export const SYSTEM_PREFIX = '【系统设定】\n'
+
+/**
+ * CodeBuddy 国内网关把请求文本里的 `@`-mention 当**文件引用**解析。
+ * DSH 系统提示里有这句：
+ *
+ *   Tokens prefixed with @ are paths the user explicitly referenced.
+ *   Relative paths resolve from the workspace root ...
+ *
+ * `@ ` 后面跟长句 → 网关当成被 @ 的路径去解析 → 解析失败 → 返回
+ * HTTP 400 {"code":11128,"msg":"Illegal API invocation from an unapproved channel"}。
+ *
+ * **这是参数校验失败伪装成安全拦截** —— 报错文案「unapproved channel」
+ * 完全误导，会把人带去查账号、域名、请求头、限流。
+ *
+ * 实测矩阵（真实凭据 + 真实 DSH system prompt 片段）：
+ *   原句含 `@ `            → 400 ✅复现
+ *   `@` → `\@`           → 200 ✅
+ *   `@` → `Z`             → 200
+ *   `@` 单独 / `@abc`      → 200（短就没事）
+ *   `@` → 全角＠/零宽/NBSP  → 400（都不行）
+ *
+ * 所以用反斜杠转义：模型看到的语义不变（`\@` 就是转义后的 @），
+ * 但网关不再把它当 mention 解析。
+ */
+export function escapeMentions(text) {
+  if (typeof text !== 'string' || text.length === 0) return text
+  return text.replace(/(^|\s)@/g, '$1\\@')
+}
+
+/**
+ * 第 2 个独立触发条件：`You are an AI agent powered by DeepSeek Harness.`
+ * 这句单独存在时反而 200，但作为 system prompt 开头就 400。
+ *
+ * 实测（2026-11-03，真实凭据）：
+ *   "You are an AI agent powered by DeepSeek Harness."  → 400
+ *   "DeepSeek Harness"（单独）                          → 200
+ *   "DeepSeek" / "Harness" 单独                          → 200
+ *   "You are an AI agent."                               → 200
+ *   把 DeepSeek 改成 Deep / Harness 改成 H                → 200
+ *
+ * 说明网关对「产品身份句」做了整句模板匹配，不是单词黑名单。
+ * 处置：把这个固定句改写成等价表述，语义不变。
+ */
+const IDENTITY_SENTENCE = /You are an AI agent powered by DeepSeek[ ]+Harness\.?/g
+export function neutralizeIdentitySentence(text) {
+  if (typeof text !== 'string' || text.length === 0) return text
+  return text.replace(IDENTITY_SENTENCE, 'You are an AI agent running in DeepSeek Harness.')
+}
+
+/** 递归处理一条 message 的身份句。 */
+export function neutralizeIdentityInMessage(message) {
+  if (message === null || typeof message !== 'object') return 0
+  let hits = 0
+  for (const key of Object.keys(message)) {
+    const value = message[key]
+    if (typeof value === 'string') {
+      const out = neutralizeIdentitySentence(value)
+      if (out !== value) { message[key] = out; hits += 1 }
+    } else if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) {
+        const item = value[i]
+        if (typeof item === 'string') {
+          const out = neutralizeIdentitySentence(item)
+          if (out !== item) { value[i] = out; hits += 1 }
+        } else if (item !== null && typeof item === 'object') {
+          hits += neutralizeIdentityInMessage(item)
+        }
+      }
+    } else if (value !== null && typeof value === 'object') {
+      hits += neutralizeIdentityInMessage(value)
+    }
+  }
+  return hits
+}
+
+/** 递归转义一条 message 里所有文本字段的 @-mention。 */
+export function escapeMessageMentions(message) {
+  if (message === null || typeof message !== 'object') return 0
+  let hits = 0
+  for (const key of Object.keys(message)) {
+    const value = message[key]
+    if (typeof value === 'string') {
+      const out = escapeMentions(value)
+      if (out !== value) { message[key] = out; hits += 1 }
+    } else if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i += 1) {
+        const item = value[i]
+        if (typeof item === 'string') {
+          const out = escapeMentions(item)
+          if (out !== item) { value[i] = out; hits += 1 }
+        } else if (item !== null && typeof item === 'object') {
+          hits += escapeMessageMentions(item)
+        }
+      }
+    } else if (value !== null && typeof value === 'object') {
+      hits += escapeMessageMentions(value)
+    }
+  }
+  return hits
+}
 
 /** 保底 system：上游要求首条必须是 system prompt。 */
 export const FALLBACK_SYSTEM = 'You are a helpful assistant.'
@@ -84,10 +190,9 @@ export function normalizeLexiconConfig(raw) {
     : LEXICON_DEFAULTS.keywords
   return {
     enabled: input.enabled !== false,
-    demoteSystem: input.demoteSystem !== false,
+    escapeMentions: input.escapeMentions !== false,
+    demoteSystem: input.demoteSystem === true,
     neutralize: input.neutralize !== false,
-    hideIdentity: input.hideIdentity === true,
-    ensureSystem: input.ensureSystem === true,
     keywords: keywords.length > 0 ? keywords : LEXICON_DEFAULTS.keywords,
   }
 }
@@ -141,9 +246,6 @@ export function neutralizeText(text, config) {
       hits += 1
       return match.split(/[ \u00A0]+/).join(ZERO_WIDTH_SPACE + ' ')
     })
-    if (config.hideIdentity) {
-      out = out.replace(/(?<![\\\\/])DeepSeek(?![\\\\/])/g, 'Deep' + ZERO_WIDTH_SPACE + 'Seek')
-    }
   }
   return { text: out, hits }
 }
@@ -175,16 +277,15 @@ export function neutralizeMessage(message, config) {
 }
 
 /**
- * 对整份 messages 做改写：**system 降级为 user** + 关键词中和。永不抛错。
+ * 对整份 messages 做改写：转义 @-mention + 改写身份句。
  *
- * 降级是核心：新规则按 role 判定，system 在就会被拒。降级后指令完整保留，
- * 只是角色变了。`ensureSystem` 在降级开启时被强制忽略 —— 补一条 system
- * 等于把刚拆掉的雷又装回去。
+ * 这两个是 11128 的真实触发条件（2026-11 实测）。`demoteSystem` 是历史
+ * 误判留下的兜底开关，默认关闭。
  */
 export function rewriteMessages(messages, rawConfig) {
   const config = normalizeLexiconConfig(rawConfig)
-  if (!config.enabled) return { hits: 0, injected: false, demoted: 0, skipped: true }
-  if (!Array.isArray(messages)) return { hits: 0, injected: false, demoted: 0 }
+  if (!config.enabled) return { hits: 0, injected: false, demoted: 0, mentions: 0, identity: 0, skipped: true }
+  if (!Array.isArray(messages)) return { hits: 0, injected: false, demoted: 0, mentions: 0, identity: 0 }
 
   let demoted = 0
   if (config.demoteSystem) {
@@ -201,20 +302,25 @@ export function rewriteMessages(messages, rawConfig) {
     }
   }
 
+  // 修复 1：转义 @-mention（网关把 "@ 长句" 当文件引用解析 → 11128）
+  let mentions = 0
+  if (config.escapeMentions !== false) {
+    for (const message of messages) mentions += escapeMessageMentions(message)
+  }
+
+  // 修复 2：改写产品身份句（网关对 "You are an AI agent powered by ..." 做模板匹配 → 11128）
+  let identity = 0
+  if (config.escapeMentions !== false) {
+    for (const message of messages) identity += neutralizeIdentityInMessage(message)
+  }
+
   let hits = 0
   if (config.neutralize) {
     for (let i = 0; i < messages.length; i += 1) hits += neutralizeMessage(messages[i], config)
   }
 
-  let injected = false
-  if (config.ensureSystem && !config.demoteSystem) {
-    const first = messages[0]
-    if (first === undefined || first === null || first.role !== 'system') {
-      messages.unshift({ role: 'system', content: FALLBACK_SYSTEM })
-      injected = true
-    }
-  }
-  return { hits, injected, demoted }
+  const injected = false
+  return { hits, injected, demoted, mentions, identity }
 }
 
 /**

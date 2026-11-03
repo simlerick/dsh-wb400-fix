@@ -19,11 +19,7 @@
     "demoteSystem": "降级 system 消息（核心）",
     "demoteSystemHint": "把 system 消息改成 user 消息并加「系统设定」前缀。2026-10 起上游按 role 判定，这是唯一有效解法，指令无损",
     "neutralize": "中和身份关键词",
-    "neutralizeHint": "把「DeepSeek Harness」中间插入不可见分隔符，语义不变、上游不再拦截",
-    "ensureSystem": "补首条 system（已废弃）",
-    "ensureSystemHint": "降级开启时这项会被忽略——补 system 等于把刚拆掉的雷装回去",
-    "hideIdentity": "隐藏品牌词",
-    "hideIdentityHint": "更激进：连 DeepSeek 也打散。默认关闭"
+    "neutralizeHint": "把「DeepSeek Harness」中间插入不可见分隔符，语义不变、上游不再拦截"
   },
   "why": {
     "title": "这个报错到底是怎么回事",

@@ -51,7 +51,7 @@ export function apply(ctx, config) {
         : 'desktop'
 
   /* --- 运行时统计（面板展示「已中和多少次」）------------------------- */
-  const stats = { rewrites: 0, hits: 0, injected: 0, demoted: 0, lastAt: null }
+  const stats = { rewrites: 0, hits: 0, injected: 0, demoted: 0, mentions: 0, identity: 0, lastAt: null }
 
   /* --- 主通道：fetch 层钩子（不依赖任何第三方文件）-------------------
    *
@@ -74,15 +74,21 @@ export function apply(ctx, config) {
           hits: result.hits ?? 0,
           injected: Boolean(result.injected),
           demoted: result.demoted ?? 0,
-          // ⚠️ demoted 必须计入 changed：否则 fetch-hook 会以为「没改动」而
-          // 原样发出被降级前的 body，修复直接失效（这是最容易漏的一处）。
-          changed: (result.hits ?? 0) > 0 || Boolean(result.injected) || (result.demoted ?? 0) > 0,
+          mentions: result.mentions ?? 0,
+          identity: result.identity ?? 0,
+          // ⚠️ mentions / demoted 必须计入 changed：否则 fetch-hook 会以为
+          // 「没改动」而原样发出未改写的 body，修复直接失效（最容易漏的一处）。
+          changed: (result.hits ?? 0) > 0 || Boolean(result.injected) ||
+                   (result.demoted ?? 0) > 0 || (result.mentions ?? 0) > 0 ||
+                   (result.identity ?? 0) > 0,
         }
       },
       onStats: (result) => {
         stats.rewrites += 1
         stats.hits += result.hits
         stats.demoted += result.demoted ?? 0
+        stats.mentions += result.mentions ?? 0
+        stats.identity += result.identity ?? 0
         if (result.injected) stats.injected += 1
         stats.lastAt = Date.now()
       },
@@ -105,6 +111,8 @@ export function apply(ctx, config) {
         stats.rewrites += 1
         stats.hits += result.hits
         stats.demoted += result.demoted ?? 0
+        stats.mentions += result.mentions ?? 0
+        stats.identity += result.identity ?? 0
         if (result.injected) stats.injected += 1
         stats.lastAt = Date.now()
       },
@@ -213,6 +221,8 @@ export function apply(ctx, config) {
             stats.hits = 0
             stats.injected = 0
             stats.demoted = 0
+            stats.mentions = 0
+            stats.identity = 0
             stats.lastAt = null
           }
           return okResponse({ config: next })
@@ -322,6 +332,6 @@ export function apply(ctx, config) {
     }
   })
 
-  logger.info?.('workbuddy-fix: ready（system 降级 + 关键词中和，设置页可开关）')
+  logger.info?.('workbuddy-fix: ready（@-mention 转义 + 关键词中和，设置页可开关）')
 }
 

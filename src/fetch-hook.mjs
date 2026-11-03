@@ -155,6 +155,8 @@ export function installFetchHook({
         hits: result.hits ?? 0,
         injected: Boolean(result.injected),
         demoted: result.demoted ?? 0,
+        mentions: result.mentions ?? 0,
+        identity: result.identity ?? 0,
       })
     } catch {
       /* 统计失败不影响主流程 */

@@ -2,6 +2,60 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-11-03
+
+### 根因修正：两个参数校验，不是 role 检查
+
+用户朋友（Windows 版实现）实测定位出真实原因，我逐条复现验证：
+
+**触发条件 1：`@`-mention 后跟路径样式长句**
+
+CodeBuddy 网关把请求文本里的 `@` 当文件引用解析。DSH 系统提示有：
+
+```
+Tokens prefixed with \@ are paths the user explicitly referenced.
+Relative paths resolve from the workspace root ...
+```
+
+`@ ` + 长句 → 网关当路径解析 → 失败 → 11128。
+
+实测矩阵：
+
+| 变体 | 结果 |
+|---|---|
+| 原句含 `@ ` + 长句 | ❌ 400 |
+| `@` → `\@`（反斜杠转义） | ✅ 200 |
+| `@` → `Z` | ✅ 200 |
+| `@` 单独 / `@abc` / `@` 后接中文 | ✅ 200 |
+| `@` → 全角 `＠` / 零宽 / NBSP / 删空格 | ❌ 全部 400 |
+
+**触发条件 2：产品身份句模板匹配**
+
+| 变体 | 结果 |
+|---|---|
+| `You are an AI agent powered by DeepSeek​ Harness.` | ❌ 400 |
+| `You are an AI agent running in DeepSeek​ Harness.` | ✅ 200 |
+| `DeepSeek​ Harness`（单独） | ✅ 200 |
+| `DeepSeek` / `Harness` 单独 | ✅ 200 |
+| `DeepSeek\u200B Harness`（零宽） | ❌ 仍 400 |
+
+注意：DSH 实际发的是 `running in`，本来就 200。这条修复是为 `powered by` 变体兜底。
+
+### 改动
+
+- **新增 `escapeMentions`（默认开）**：`text.replace(/(^|\s)@/g, '$1\\@')`
+- **新增身份句改写**：`powered by` → `running in`
+- **`demoteSystem` 默认关闭**：这是早期误判（以为网关检查 `role="system"`），
+  降级成 user 只是碰巧绕过，不是根因。仅留作兜底开关。
+- **删除废弃 UI**：`补首条 system`、`隐藏品牌词` 两个按钮及相关文案/后端字段
+- `fetch-hook` 的 `changed` 判定补齐 `mentions` / `identity`
+
+### 验证
+
+真实 11.6KB DSH system prompt + 真实凭据 → 200，`role` 保持 `system`（不靠降级）。
+
+---
+
 ## [1.2.0] - 2026-10-30
 
 ### 上游规则变更，核心修复重写（重要）
