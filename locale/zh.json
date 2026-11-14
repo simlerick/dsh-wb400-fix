@@ -12,9 +12,7 @@
     "unknown": "状态未知"
   },
   "master": {
-    "label": "总开关",
-    "hint": "关闭后请求完全原样发出，一个字节都不改",
-    "onNow": "总开关已开：注入段在位"
+    "label": "总开关"
   },
   "option": {
     "buddyFix": "国内版 @-mention 转义",
@@ -26,12 +24,6 @@
     "demoteSystem": "降级 system 消息",
     "demoteSystemHint": "把 system 消息改成 user 消息并加「系统设定」前缀。仅对走标准 fetch 的反代有效。"
   },
-  "why": {
-    "title": "两条修复分别在做什么",
-    "body": "两个渠道回同一个错误码 11128，原因完全不同，所以按厂商分别处理，互不干扰。",
-    "buddyWhy": "国内版（CodeBuddy / copilot.tencent.com）：网关把请求正文里的 @-mention 当文件引用解析，遇到「@ + 长句」就失败，并用 11128 伪装成渠道拦截。",
-    "wbWhy": "国际版（WorkBuddy / www.workbuddy.ai）：强制要求三个会话标识头，缺任一就回 request illegal，报错文案跟国内版一模一样，但原因无关。"
-  },
   "status": {
     "patchOk": "注入段在位",
     "patchMissing": "注入段不在位",
@@ -40,8 +32,6 @@
     "hookMissingHint": "Host 半身没有运行：确认插件已启用，然后重启 DSH。",
     "repair": "重新打补丁",
     "repairing": "处理中…",
-    "meterLinked": "与「用量计量」插件联动中（共享同一份开关）",
-    "standalone": "独立运行",
     "fetchOk": "fetch 层钩子已接管",
     "fetchMissing": "fetch 层钩子未安装",
     "fetchMissingHint": "Host 半身没跑起来：确认插件已启用，然后重启 DSH。",
@@ -58,9 +48,6 @@
     "after": "改写后",
     "hits": "命中 {n} 处",
     "note": "文件路径不会被改写"
-  },
-  "restore": {
-    "hint": "关掉总开关即可完全恢复原样：注入段会被从 OFM 里拆掉，请求原样发出。"
   },
   "error": {
     "loadFailed": "读取状态失败：{reason}",

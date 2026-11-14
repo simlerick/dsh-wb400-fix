@@ -68,7 +68,6 @@ window.__ModuleLoader__.load({
       'state.on': '已修复',
       'state.off': '已关闭',
       'master.label': '总开关',
-      'master.hint': '关闭后完全恢复原始请求，一个字节都不改',
       'option.buddyFix': '国内版 @-mention 转义',
       'option.buddyFixHint': '把消息正文里行首或空白后的 @ 转义成 \\@。网关曾把 @-mention 当文件引用解析，解析失败就回 11128。',
       'option.workbuddyFix': '国际版会话头补齐',
@@ -77,18 +76,12 @@ window.__ModuleLoader__.load({
       'option.demoteSystemHint': '把 system 消息改成 user 消息并加「系统设定」前缀。仅对走标准 fetch 的反代有效。',
       'option.neutralize': '中和身份关键词',
       'option.neutralizeHint': '在「DeepSeek​ Harness」中间插入不可见分隔符，语义不变。',
-      'why.title': '两条修复分别在做什么',
-      'why.body': '两个渠道回同一个错误码 11128，原因完全不同，所以按厂商分别处理，互不干扰。',
-      'why.buddyWhy': '国内版（CodeBuddy / copilot.tencent.com）：网关把请求正文里的 @-mention 当文件引用解析，遇到「@ + 长句」就失败，并用 11128 伪装成渠道拦截。',
-      'why.wbWhy': '国际版（WorkBuddy / www.workbuddy.ai）：强制要求三个会话标识头，缺任一就回 request illegal，报错文案跟国内版一模一样，但原因无关。',
       'status.patchOk': '钩子已就位',
       'status.patchMissing': 'pack.js 未打钩子',
       'status.hookOk': '运行时钩子已安装',
       'status.hookMissing': '运行时钩子未安装',
       'status.repair': '补打钩子',
       'status.repairing': '处理中…',
-      'status.meterLinked': '与「用量计量」插件联动中（共享同一份开关）',
-      'status.standalone': '独立运行（未检测到用量计量插件）',
       'stats.label': '本机已降级 system {k} 条，中和 {n} 处，补 system {m} 次',
       'stats.idle': '还没有需要改写的请求',
       'preview.title': '效果预览',
@@ -96,7 +89,6 @@ window.__ModuleLoader__.load({
       'preview.after': '改写后',
       'preview.hits': '命中 {n} 处',
       'preview.note': '文件路径不会被改写',
-      'restore.hint': '上游不再拦截后，把总开关关掉即可完全恢复原样。',
       'error.loadFailed': '读取状态失败：{reason}',
     }
 
@@ -107,7 +99,6 @@ window.__ModuleLoader__.load({
       'state.on': 'Fixed',
       'state.off': 'Off',
       'master.label': 'Master switch',
-      'master.hint': 'Turning this off restores the original request untouched',
       'option.buddyFix': 'Domestic @-mention escaping',
       'option.buddyFixHint': 'Escapes @ at line start or after whitespace into \\@. The gateway used to parse @-mentions as file references and answer 11128 when parsing failed.',
       'option.workbuddyFix': 'International conversation headers',
@@ -116,18 +107,12 @@ window.__ModuleLoader__.load({
       'option.demoteSystemHint': 'Rewrites role=system into role=user with a prefix. Only affects proxies using the standard fetch.',
       'option.neutralize': 'Neutralise identity keyword',
       'option.neutralizeHint': 'Inserts an invisible separator inside "DeepSeek Harness" — same meaning.',
-      'why.title': 'What each fix does',
-      'why.body': 'Both channels return the same error code 11128 for completely different reasons, so they are handled per vendor and never interfere.',
-      'why.buddyWhy': 'Domestic (CodeBuddy / copilot.tencent.com): the gateway parses @-mentions in the body as file references. A long "@ + sentence" fails to parse and is reported as 11128, disguised as a channel block.',
-      'why.wbWhy': 'International (WorkBuddy / www.workbuddy.ai): requires three conversation headers. Missing any one yields request illegal — identical wording, unrelated cause.',
       'status.patchOk': 'Hook in place',
       'status.patchMissing': 'pack.js has no hook',
       'status.hookOk': 'Runtime hook installed',
       'status.hookMissing': 'Runtime hook missing',
       'status.repair': 'Reinstall hook',
       'status.repairing': 'Working…',
-      'status.meterLinked': 'Linked with the usage-meter plugin (shared switches)',
-      'status.standalone': 'Standalone (usage-meter plugin not detected)',
       'stats.label': 'Demoted {k} system messages, neutralised {n} spots, prepended system {m} times',
       'stats.idle': 'No request needed rewriting yet',
       'preview.title': 'Preview',
@@ -135,7 +120,6 @@ window.__ModuleLoader__.load({
       'preview.after': 'After',
       'preview.hits': '{n} matches',
       'preview.note': 'File paths are never rewritten',
-      'restore.hint': 'Once the upstream stops blocking, switch the master switch off to restore the original behaviour.',
       'error.loadFailed': 'Failed to load status: {reason}',
     }
 
@@ -253,17 +237,6 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function WhyCard(props) {
-      const t = props.t
-      return h('div', { className: 'wbfix-why' },
-        h('h3', { className: 'wbfix-why-title' }, t('why.title')),
-        h('p', { className: 'wbfix-why-body' }, t('why.body')),
-        h('p', { className: 'wbfix-why-sub' }, t('option.buddyFix')),
-        h('p', { className: 'wbfix-why-body' }, t('why.buddyWhy')),
-        h('p', { className: 'wbfix-why-sub' }, t('option.workbuddyFix')),
-        h('p', { className: 'wbfix-why-body' }, t('why.wbWhy')))
-    }
-
     function PreviewCard(props) {
       const t = props.t
       const pre = props.preview
@@ -355,7 +328,6 @@ window.__ModuleLoader__.load({
           ? h('div', { className: 'wbfix-card' },
               h(ToggleRow, {
                 label: t('master.label'),
-                hint: t('master.hint'),
                 checked: enabled,
                 busy,
                 disabled: false,
@@ -408,15 +380,11 @@ window.__ModuleLoader__.load({
                     ? t('stats.label', { k: stats.demoted || 0, n: stats.hits || 0, m: stats.injected || 0 })
                     : t('stats.idle'))),
 
-              h('div', { className: 'wbfix-meta' },
-                h('span', null, v.meterPresent ? t('status.meterLinked') : t('status.standalone'))),
-
-              h('p', { className: 'wbfix-note' }, t('restore.hint'))
+              null
             )
           : null,
 
-        v ? h(PreviewCard, { t, preview }) : null,
-        h(WhyCard, { t })
+        v ? h(PreviewCard, { t, preview }) : null
       )
     }
 

@@ -1,6 +1,6 @@
 {
   "name": "dsh-wb400-fix",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "type": "module",
   "description": "修复 WorkBuddy / CodeBuddy 的「请求被拦截」400 错误（Illegal API invocation from an unapproved channel / code 11128），对提示词无损，兼容所有 WB 反代插件。总开关一关，请求原样发出一个字节都不改。",
   "license": "MIT",

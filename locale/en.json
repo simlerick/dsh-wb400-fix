@@ -12,9 +12,7 @@
     "unknown": "Unknown"
   },
   "master": {
-    "label": "Master switch",
-    "hint": "When off, requests are sent exactly as-is — not a single byte changed",
-    "onNow": "Master switch on: injection block in place"
+    "label": "Master switch"
   },
   "option": {
     "buddyFix": "Domestic @-mention escaping",
@@ -26,12 +24,6 @@
     "demoteSystem": "Demote system message",
     "demoteSystemHint": "Rewrites role=system into role=user with a prefix. Only affects proxies that use the standard fetch."
   },
-  "why": {
-    "title": "What each fix does",
-    "body": "Both channels return the same error code 11128 for completely different reasons, so they are handled per vendor and never interfere.",
-    "buddyWhy": "Domestic (CodeBuddy / copilot.tencent.com): the gateway parses @-mentions in the request body as file references. A long \"@ + sentence\" fails to parse and is reported as 11128, disguised as a channel block.",
-    "wbWhy": "International (WorkBuddy / www.workbuddy.ai): requires three conversation headers. Missing any one yields request illegal — identical wording to the domestic error, entirely unrelated cause."
-  },
   "status": {
     "patchOk": "Injection block in place",
     "patchMissing": "Injection block absent",
@@ -40,8 +32,6 @@
     "hookMissingHint": "The host half is not running: make sure the plugin is enabled, then restart DSH.",
     "repair": "Re-apply patch",
     "repairing": "Working…",
-    "meterLinked": "Linked with the usage-meter plugin (shared switches)",
-    "standalone": "Standalone",
     "fetchOk": "fetch-layer hook active",
     "fetchMissing": "fetch-layer hook inactive",
     "fetchMissingHint": "Host half is not running: make sure the plugin is enabled, then restart DSH.",
@@ -58,9 +48,6 @@
     "after": "After",
     "hits": "{n} matches",
     "note": "File paths are never rewritten"
-  },
-  "restore": {
-    "hint": "Switching the master switch off restores the original behaviour: the injection block is removed from OFM and requests go out untouched."
   },
   "error": {
     "loadFailed": "Failed to load status: {reason}",
