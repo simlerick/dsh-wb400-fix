@@ -2,6 +2,51 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2026-11-14
+
+### 身份句修复改为自带实现，不再依赖宿主
+
+v1.5.0 之前，`You are an AI agent powered by X Harness.` 这句的改写逻辑
+只存在于 `src/lexicon.mjs`，而且只在 fetch 层挂钩。问题是 OFM 这类反代
+自带 `createChannelFetch()`，包装 `globalThis.fetch` 完全拦不到 —— 于是这条
+修复形同虚设。
+
+更糟的是：某些宿主（如 dsh-purge）会把身份句清空，看起来「没问题了」，
+其实是借了别人的力。一旦那个宿主关掉，11128 立刻回来。
+
+这版把身份句改写直接写进 `pack.js` 的 `send()` 注入段，成为插件自己的
+能力，与宿主、与任何其他插件无关：
+
+```js
+if (this.product.id === "buddy" && body.includes("powered by")) {
+  // "You are an AI agent powered by DeepSeek\u200b Harness."  -> 400
+  // "You are an AI agent running in DeepSeek\u200b Harness."   -> 200
+  text.replace(/You are an AI agent powered by DeepSeek[\u200b\u200c\u200d ]*Harness/g,
+               "You are an AI agent running in DeepSeek\u200b Harness")
+}
+```
+
+同时覆盖 `messages[].content`（字符串与数组两种形态）和顶层的 `system` 字段。
+
+### 独立实测（2026-11-14，真实 token 打 copilot.tencent.com）
+
+| system prompt | 结果 |
+|---|---|
+| `You are an AI agent powered by DeepSeek Harness.` | 400 / 11128 |
+| `You are an AI agent running in DeepSeek Harness.` | 200 |
+| `DeepSeek Harness`（单独） | 200 |
+| 无关句 / 大 body / 长路径 | 200 |
+
+结论：唯一触发条件是那句话的动词，与 `@`-mention、路径、长度、role、
+请求头全部无关。这也是为什么 v1.2~v1.5 一直在 `@` 上打转却时好时坏 ——
+那些 `@` 相关的现象属于另一个更早的规则，上游已经撤掉了。
+
+### 与 dsh 解耦
+
+`lexicon.mjs` 里那份 `neutralizeIdentitySentence` 保留（供 fetch 层兜底，
+以及给别的 WB 反代插件用），但不再是唯一路径。注入段是自洽的：不读
+`lexicon.json`、不读环境变量、不 import 任何宿主模块。
+
 ## [1.5.0] - 2026-11-14
 
 ### 总开关成为**真正的**总开关
