@@ -1,51 +1,55 @@
 {
   "meta": {
     "title": "WorkBuddy 400 Fix",
-    "description": "One-click fix for WorkBuddy / CodeBuddy \"请求被拦截 Illegal API invocation from an unapproved channel\" (code 11128). Lossless prompt neutralization, togglable at any time."
+    "description": "Fixes WorkBuddy / CodeBuddy \"Illegal API invocation from an unapproved channel\" (code 11128). With the master switch off, requests go out byte-for-byte unchanged."
   },
   "nav": "wb400 Fix",
-  "title": "Keyword filter bypass",
-  "subtitle": "One-click fix when the upstream rejects requests by keyword",
+  "title": "11128 fixes",
+  "subtitle": "Two independent fixes for the domestic and international channels, driven by one master switch",
   "state": {
-    "on": "Fixed",
+    "on": "Enabled",
     "off": "Off",
     "unknown": "Unknown"
   },
   "master": {
     "label": "Master switch",
-    "hint": "Turning this off restores the original request untouched"
+    "hint": "When off, requests are sent exactly as-is — not a single byte changed",
+    "onNow": "Master switch on: injection block in place"
   },
   "option": {
-    "demoteSystem": "Demote system message (core)",
-    "demoteSystemHint": "Rewrites role=system into role=user with a prefix. Since Oct 2026 upstream judges by role; the only working fix, prompt lossless",
+    "buddyFix": "Domestic @-mention escaping",
+    "buddyFixHint": "Escapes @ at line start or after whitespace into \\@. The gateway used to parse @-mentions as file references and answer 11128 when parsing failed.",
+    "workbuddyFix": "International conversation headers",
+    "workbuddyFixHint": "Adds X-Conversation-ID / Message-ID / Request-ID. The international channel rejects any request missing one of them with 400 request illegal.",
     "neutralize": "Neutralise identity keyword",
-    "neutralizeHint": "Inserts an invisible separator inside \"DeepSeek Harness\" — same meaning, no longer blocked"
+    "neutralizeHint": "Inserts an invisible separator inside \"DeepSeek Harness\" — same meaning.",
+    "demoteSystem": "Demote system message",
+    "demoteSystemHint": "Rewrites role=system into role=user with a prefix. Only affects proxies that use the standard fetch."
   },
   "why": {
-    "title": "What this error actually is",
-    "body": "The upstream returns 400 with \"Illegal API invocation from an unapproved channel\", which looks like a channel problem. It is not — it has nothing to do with the channel, domain, client identity or headers. The real cause is keyword-based content filtering on the system prompt: the phrase \"DeepSeek Harness\" gets the request rejected.",
-    "selfCheck": "Verify in 60 seconds",
-    "selfCheckBody": "Send the same request twice with the same token, changing only one word in the system prompt. If the one containing the keyword fails and the other succeeds, this is the cause.",
-    "whyIntermittent": "Why it seems intermittent",
-    "whyIntermittentBody": "The keyword only triggers reliably with a large enough body (roughly over 1KB). Short prompts pass even with the keyword, which is why it is easily mistaken for a flaky failure."
+    "title": "What each fix does",
+    "body": "Both channels return the same error code 11128 for completely different reasons, so they are handled per vendor and never interfere.",
+    "buddyWhy": "Domestic (CodeBuddy / copilot.tencent.com): the gateway parses @-mentions in the request body as file references. A long \"@ + sentence\" fails to parse and is reported as 11128, disguised as a channel block.",
+    "wbWhy": "International (WorkBuddy / www.workbuddy.ai): requires three conversation headers. Missing any one yields request illegal — identical wording to the domestic error, entirely unrelated cause."
   },
   "status": {
-    "patchOk": "Hook in place",
-    "patchMissing": "Legacy hook not applied (not required)",
+    "patchOk": "Injection block in place",
+    "patchMissing": "Injection block absent",
     "hookOk": "Runtime hook installed",
     "hookMissing": "Runtime hook missing",
     "hookMissingHint": "The host half is not running: make sure the plugin is enabled, then restart DSH.",
-    "repair": "Reinstall hook",
+    "repair": "Re-apply patch",
     "repairing": "Working…",
     "meterLinked": "Linked with the usage-meter plugin (shared switches)",
-    "standalone": "Standalone (usage-meter plugin not detected)",
-    "fetchOk": "Main channel active (fetch layer)",
-    "fetchMissing": "Main channel inactive",
+    "standalone": "Standalone",
+    "fetchOk": "fetch-layer hook active",
+    "fetchMissing": "fetch-layer hook inactive",
     "fetchMissingHint": "Host half is not running: make sure the plugin is enabled, then restart DSH.",
-    "patchOptional": "Legacy hook not applied (not required)"
+    "patchOptional": "Injection block absent",
+    "gateOff": "Master switch off: injection block removed"
   },
   "stats": {
-    "label": "Demoted {k} system messages, neutralised {n} spots, prepended system {m} times",
+    "label": "Rewrote {n} requests, escaped {m} @ mentions, added headers {k} times",
     "idle": "No request needed rewriting yet"
   },
   "preview": {
@@ -56,7 +60,7 @@
     "note": "File paths are never rewritten"
   },
   "restore": {
-    "hint": "Once the upstream stops blocking, switch the master switch off to restore the original behaviour."
+    "hint": "Switching the master switch off restores the original behaviour: the injection block is removed from OFM and requests go out untouched."
   },
   "error": {
     "loadFailed": "Failed to load status: {reason}",

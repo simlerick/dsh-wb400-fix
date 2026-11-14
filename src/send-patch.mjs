@@ -32,6 +32,21 @@ export const SEND_MARKER_WB = '[wbfix:conv]'
 export const SEND_MARKERS = [SEND_MARKER_BUDDY, SEND_MARKER_WB]
 
 /**
+ * 总开关门控标记。
+ *
+ * 补丁注入的代码本身**无法读文件**（它在 pack.js 的 send() 里同步执行，
+ * 而 send() 是 async 的但引入 fs 会破坏打包产物的纯文本特性），
+ * 所以总开关只能在**打补丁/撤补丁**这一层生效：
+ *
+ *   enabled=false  → 调 revertSendPatch()，把注入段整段删掉
+ *   enabled=true   → 调 applySendPatch()，重新插入
+ *
+ * 这也是唯一能做到「关了就全关」的做法 —— 只要注入段在文件里，
+ * 它就无条件执行，改任何配置都拦不住它。
+ */
+export const SEND_GATE_ENV = 'DSH_WB400_DISABLED'
+
+/**
  * 锚点：buddy adapter 的 send() 里设置完 User-Agent 之后那一行。
  *
  * 选这一行的原因：它在 headers 全部 set 完、`fetchImpl` 调用之前，
@@ -45,6 +60,10 @@ export const SEND_ANCHOR =
 /** 注入的代码。缩进 4 空格，与周边一致。 */
 function buildInjection() {
   return [
+    '    // [wbfix:gate] 总开关：读环境变量，关了就整段跳过（零副作用）。',
+    '    // 为什么还要这一层：撤补丁要改文件、要重启，而用户点「关」时期望的是',
+    '    // **立即**停手。两层叠加 = 点了立刻停，重启后文件里彻底不再有这段。',
+    '    if (!process.env.DSH_WB400_DISABLED) {',
     '    // [wbfix:@] CodeBuddy 国内网关 11128：网关把请求文本里的 @-mention 当文件',
     '    // 引用解析，遇到「行首或空白后的 @ + 长句」就解析失败，并用 11128',
     '    // 「Illegal API invocation from an unapproved channel」伪装成安全拦截。',
@@ -93,6 +112,7 @@ function buildInjection() {
     '        }',
     '      } catch (e) {}',
     '    }',
+    '    }',  // if (!process.env.DSH_WB400_DISABLED) 结束
     '',
     SEND_ANCHOR,
   ].join('\n')
@@ -194,18 +214,20 @@ export function revertSendPatch({ packFile } = {}) {
   if (!state.patched) return { reverted: false, reason: 'not-patched' }
 
   // 注入段以 "[wbfix:@" 起，止于锚点行之前。整段删掉即可。
+  // 注意：v1.5 起注入段开头多了一层总开关 `if (!process.env...)`，
+  // 它的注释行也带 [wbfix:@] 标记，所以「以首个 [wbfix:@] 为起点」依然成立。
   const lines = state.text.split('\n')
   const keep = []
   let skipping = false
   for (const line of lines) {
-    if (line.includes('[wbfix:@]')) { skipping = true; continue }
+    const isAnchor = line === '    headers.set("User-Agent", resolveUserAgent(this.product, options.model));'
+    if (!skipping && (line.includes('[wbfix:gate]') || line.includes('[wbfix:@]'))) { skipping = true; continue }
     if (skipping) {
       // 锚点是注入段的结尾（buildInjection 最后一行就是锚点首行）
-      if (line === '    headers.set("User-Agent", resolveUserAgent(this.product, options.model));') {
+      if (isAnchor) {
         skipping = false
         keep.push(line)
       }
-      // 跳过注入的其余行（含 [wbfix:conv] 那段）
       continue
     }
     keep.push(line)

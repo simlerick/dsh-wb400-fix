@@ -34,6 +34,7 @@ import {
 import {
   applySendPatch,
   describeSendPatch,
+  revertSendPatch,
 } from './src/send-patch.mjs'
 import { installFetchHook, isFetchHookInstalled } from './src/fetch-hook.mjs'
 
@@ -56,6 +57,29 @@ export function apply(ctx, config) {
 
   /* --- 运行时统计（面板展示「已中和多少次」）------------------------- */
   const stats = { rewrites: 0, hits: 0, injected: 0, demoted: 0, mentions: 0, identity: 0, lastAt: null }
+
+  /**
+   * 总开关关闭时的清理动作：把 pack.js 里的注入段整段拆掉。
+   *
+   * 为什么必须这么做：注入段是**无条件执行**的硬代码，它自己不看任何配置。
+   * 想让「关了」变成「真的什么都不做」，只能把它从文件里删掉。
+   *
+   * 幂等：没打补丁时直接返回，不报错。
+   */
+  function applyMasterSwitchOff(packFile) {
+    try {
+      const state = describeSendPatch(packFile)
+      if (!state.ok || !state.applied) return { reverted: false, reason: state.reason ?? 'not-patched' }
+      const result = revertSendPatch({ packFile })
+      if (result.reverted) {
+        logger.info?.('workbuddy-fix: 总开关关闭 —— 已拆掉 pack.js 注入段，重启后彻底不生效。')
+      }
+      return result
+    } catch (error) {
+      logger.debug?.(`workbuddy-fix: 拆补丁异常（${error instanceof Error ? error.message : String(error)}）`)
+      return { reverted: false, reason: 'exception' }
+    }
+  }
 
   /* --- 主通道：fetch 层钩子（不依赖任何第三方文件）-------------------
    *
@@ -178,6 +202,16 @@ export function apply(ctx, config) {
       if (cancelled) return
       try {
         const packFile = resolvePackFile({ dshHome, profile })
+
+        // 总开关：关着就把注入段拆掉，绝不自愈回来。
+        // 这是「关了就全关」唯一的实现方式 —— 注入段一旦在文件里，
+        // 它自己不看配置，只能靠删掉它。
+        const cfg = readLexiconConfig(dshHome)
+        if (!cfg.enabled) {
+          applyMasterSwitchOff(packFile)
+          return
+        }
+
         const state = describeSendPatch(packFile)
         if (!state.ok) {
           logger.debug?.(`workbuddy-fix: send 补丁跳过（${state.reason}）`)
@@ -268,6 +302,22 @@ export function apply(ctx, config) {
           const body = await readBody(request)
           const current = readLexiconConfig(dshHome)
           const next = writeLexiconConfig(dshHome, { ...current, ...(body.patch ?? {}) })
+
+          // 总开关即时生效：不等重启，也不靠自愈定时器。
+          //  关 → 立刻拆掉 pack.js 注入段，并设环境变量让残留段立即短路
+          //  开 → 立刻重打补丁（下一轮请求就恢复修复）
+          let masterAction = null
+          if (next.enabled !== current.enabled) {
+            const packFile = resolvePackFile({ dshHome, profile })
+            if (!next.enabled) {
+              process.env.DSH_WB400_DISABLED = '1'
+              masterAction = applyMasterSwitchOff(packFile)
+            } else {
+              delete process.env.DSH_WB400_DISABLED
+              masterAction = applySendPatch({ packFile, dryRun: false })
+            }
+          }
+
           // 重置计数：否则「已中和 N 次」会跨模式累积，看不出是哪种模式干的
           if (body.resetStats === true) {
             stats.rewrites = 0
@@ -278,7 +328,7 @@ export function apply(ctx, config) {
             stats.identity = 0
             stats.lastAt = null
           }
-          return okResponse({ config: next })
+          return okResponse({ config: next, masterAction })
         } catch (error) {
           return errorResponse('wbfix/set-failed', error instanceof Error ? error.message : String(error))
         }
